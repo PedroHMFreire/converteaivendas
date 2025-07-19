@@ -17,7 +17,7 @@ const Vendedores = () => {
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null);
-  const [filtroLoja, setFiltroLoja] = useState<string>('');
+  const [filtroLoja, setFiltroLoja] = useState<string>('all');
   const [formData, setFormData] = useState({
     nome: '',
     lojaId: '',
@@ -107,9 +107,9 @@ const Vendedores = () => {
     return loja?.nome || 'Loja não encontrada';
   };
 
-  const vendedoresFiltrados = filtroLoja 
-    ? vendedores.filter(v => v.lojaId === filtroLoja)
-    : vendedores;
+  const vendedoresFiltrados = filtroLoja === 'all'
+    ? vendedores
+    : vendedores.filter(v => v.lojaId === filtroLoja);
 
   const getVendasDoVendedor = (vendedorId: string) => {
     const registros = storage.getRegistrosByVendedor(vendedorId);
@@ -228,7 +228,7 @@ const Vendedores = () => {
                     <SelectValue placeholder="Todas as lojas" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todas as lojas</SelectItem>
+                    <SelectItem value="all">Todas as lojas</SelectItem>
                     {lojas.map((loja) => (
                       <SelectItem key={loja.id} value={loja.id}>
                         {loja.nome}
@@ -300,12 +300,12 @@ const Vendedores = () => {
               <div className="text-center py-8">
                 <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {filtroLoja ? 'Nenhum vendedor nesta loja' : 'Nenhum vendedor cadastrado'}
+                  {filtroLoja !== 'all' ? 'Nenhum vendedor nesta loja' : 'Nenhum vendedor cadastrado'}
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  {filtroLoja ? 'Tente selecionar outra loja' : 'Comece cadastrando seu primeiro vendedor'}
+                  {filtroLoja !== 'all' ? 'Tente selecionar outra loja' : 'Comece cadastrando seu primeiro vendedor'}
                 </p>
-                {!filtroLoja && (
+                {filtroLoja === 'all' && (
                   <Button onClick={() => setIsDialogOpen(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Cadastrar Primeiro Vendedor

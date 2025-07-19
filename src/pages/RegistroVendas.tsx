@@ -15,7 +15,7 @@ const RegistroVendas = () => {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [registros, setRegistros] = useState<RegistroVenda[]>([]);
-  const [filtroLoja, setFiltroLoja] = useState<string>('');
+  const [filtroLoja, setFiltroLoja] = useState<string>('all');
   const [formData, setFormData] = useState({
     vendedorId: '',
     data: new Date().toISOString().split('T')[0],
@@ -95,9 +95,9 @@ const RegistroVendas = () => {
     return loja?.nome || 'Loja não encontrada';
   };
 
-  const vendedoresFiltrados = filtroLoja 
-    ? vendedores.filter(v => v.lojaId === filtroLoja)
-    : vendedores;
+  const vendedoresFiltrados = filtroLoja === 'all'
+    ? vendedores
+    : vendedores.filter(v => v.lojaId === filtroLoja);
 
   const registrosRecentes = registros
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -189,7 +189,7 @@ const RegistroVendas = () => {
                       <SelectValue placeholder="Todas as lojas" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Todas as lojas</SelectItem>
+                      <SelectItem value="all">Todas as lojas</SelectItem>
                       {lojas.map((loja) => (
                         <SelectItem key={loja.id} value={loja.id}>
                           {loja.nome}
@@ -274,6 +274,7 @@ const RegistroVendas = () => {
           <Card>
             <CardHeader>
               <CardTitle>Registros Recentes</CardTitle>
+            
             </CardHeader>
             <CardContent>
               {registrosRecentes.length === 0 ? (
