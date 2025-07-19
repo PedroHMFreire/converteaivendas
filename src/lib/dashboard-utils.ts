@@ -66,13 +66,18 @@ export const calculateDashboardData = (
     };
   });
 
-  const melhorVendedor = vendedorStats.reduce((prev, current) => 
-    prev.conversao > current.conversao ? prev : current
-  )?.vendedor || 'N/A';
+  // Corrigir o erro de reduce em arrays vazios
+  const melhorVendedor = vendedorStats.length > 0 
+    ? vendedorStats.reduce((prev, current) => 
+        prev.conversao > current.conversao ? prev : current
+      ).vendedor 
+    : 'N/A';
 
-  const melhorLoja = lojaStats.reduce((prev, current) => 
-    prev.conversao > current.conversao ? prev : current
-  )?.loja || 'N/A';
+  const melhorLoja = lojaStats.length > 0 
+    ? lojaStats.reduce((prev, current) => 
+        prev.conversao > current.conversao ? prev : current
+      ).loja 
+    : 'N/A';
 
   return {
     totalAtendimentos,
