@@ -92,9 +92,14 @@ const LandingPage = () => {
               </div>
               <span className="text-xl font-bold text-gray-900">Convertê</span>
             </div>
-            <Button onClick={() => navigate('/dashboard')}>
-              Acessar Sistema
-            </Button>
+            <div className="flex items-center space-x-4">
+              <Button variant="outline" onClick={() => navigate('/login')}>
+                Entrar
+              </Button>
+              <Button onClick={() => navigate('/register')}>
+                Teste Grátis
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -110,21 +115,29 @@ const LandingPage = () => {
             O sistema mais completo para acompanhar e otimizar a performance de vendas 
             da sua rede de lojas. Dashboards profissionais, rankings e relatórios detalhados.
           </p>
+          
+          {/* Badge de teste gratuito */}
+          <div className="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full mb-8">
+            <Shield className="w-4 h-4 mr-2" />
+            7 dias grátis - Sem cartão de crédito
+          </div>
+          
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button 
               size="lg" 
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/register')}
               className="text-lg px-8 py-3"
             >
-              Começar Agora
+              Começar Teste Gratuito
               <ArrowRight className="ml-2 w-5 h-5" />
             </Button>
             <Button 
               variant="outline" 
               size="lg"
+              onClick={() => navigate('/login')}
               className="text-lg px-8 py-3"
             >
-              Ver Demonstração
+              Já tenho conta
             </Button>
           </div>
         </div>
@@ -249,17 +262,20 @@ const LandingPage = () => {
             Pronto para aumentar suas conversões?
           </h2>
           <p className="text-xl text-blue-100 mb-8">
-            Comece hoje mesmo e veja resultados em 30 dias
+            Comece seu teste gratuito de 7 dias agora mesmo
           </p>
           <Button 
             size="lg" 
             variant="secondary"
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/register')}
             className="text-lg px-8 py-3"
           >
-            Começar Gratuitamente
+            Começar Teste Gratuito
             <ArrowRight className="ml-2 w-5 h-5" />
           </Button>
+          <p className="text-sm text-blue-200 mt-4">
+            Sem cartão de crédito • Cancele quando quiser
+          </p>
         </div>
       </section>
 
