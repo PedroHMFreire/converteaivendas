@@ -1,0 +1,14 @@
+# Supabase Configuration
+VITE_SUPABASE_URL=https://pypfbnvqpzsstrkqonfq.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5cGZibnZxcHpzc3Rya3FvbmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMwOTI5MjYsImV4cCI6MjA2ODY2ODkyNn0.0rL-RDHoZY33wvCmShQetEia8-zosMEvAn-5EVbC2D0
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5cGZibnZxcHpzc3Rya3FvbmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MzA5MjkyNiwiZXhwIjoyMDY4NjY4OTI2fQ.dHrTSZ21mqbffdRNX1rsf_PpxoAcX_UCb2HM57uwj5Q
+
+# OpenAI Configuration (if used)  
+OPENAI_API_KEY=your-openai-api-key
+
+# Custom API Keys (add your own)
+# VITE_CUSTOM_API_KEY=your-custom-api-key
+
+# Analytics (optional)
+
+# VITE_ANALYTICS_ID=your-analytics-id 
