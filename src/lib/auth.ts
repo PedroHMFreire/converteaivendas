@@ -1,85 +1,105 @@
+import { supabase } from './supabaseClient';
 import { User, LoginData, RegisterData } from '@/types/auth';
 
 const AUTH_STORAGE_KEY = 'converte_auth';
 
+// Função auxiliar para transformar Supabase User em User do sistema
+const mapSupabaseUser = (supabaseUser: any, extraData: any = {}): User => {
+  return {
+    id: supabaseUser.id,
+    nome: extraData.nome || '',
+    email: supabaseUser.email,
+    empresa: extraData.empresa || '',
+    telefone: extraData.telefone || '',
+    plano: extraData.plano || 'trial',
+    dataInicio: extraData.dataInicio || new Date().toISOString(),
+    dataExpiracao: extraData.dataExpiracao || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
+    ativo: extraData.ativo !== undefined ? extraData.ativo : true,
+    lojasPermitidas: extraData.lojasPermitidas || [],
+    createdAt: extraData.createdAt || new Date().toISOString()
+  };
+};
+
 export const authService = {
-  // Verificar se usuário está logado
-  getCurrentUser: (): User | null => {
-    const data = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!data) return null;
-    
-    const user = JSON.parse(data);
-    
-    // Verificar se o período de teste expirou
-    if (user.plano === 'trial' && new Date() > new Date(user.dataExpiracao)) {
-      user.ativo = false;
+  // Registrar novo usuário no Supabase Auth
+  register: async (registerData: RegisterData): Promise<User> => {
+    const { email, senha, nome, empresa, telefone } = registerData;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: senha,
+      options: {
+        data: {
+          nome,
+          empresa,
+          telefone,
+          plano: 'trial',
+          dataInicio: new Date().toISOString(),
+          dataExpiracao: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
+          ativo: true,
+          lojasPermitidas: [],
+          createdAt: new Date().toISOString()
+        }
+      }
+    });
+
+    if (error) {
+      throw new Error(error.message);
     }
-    
+
+    // Salvar dados locais para consulta rápida (opcional)
+    const user = mapSupabaseUser(data.user, data.user.user_metadata);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     return user;
   },
 
-  // Login
+  // Login via Supabase Auth
   login: async (loginData: LoginData): Promise<User> => {
-    // Simulação de login - em produção seria uma API
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Usuário demo para teste
-    if (loginData.email === 'demo@converte.com' && loginData.senha === '123456') {
-      const user: User = {
-        id: '1',
-        nome: 'Usuário Demo',
-        email: 'demo@converte.com',
-        empresa: 'Empresa Demo',
-        telefone: '(11) 99999-9999',
-        plano: 'trial',
-        dataInicio: new Date().toISOString(),
-        dataExpiracao: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
-        ativo: true,
-        lojasPermitidas: [], // Vazio = acesso a todas
-        createdAt: new Date().toISOString()
-      };
-      
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-      return user;
-    }
-    
-    throw new Error('Email ou senha inválidos');
-  },
+    const { email, senha } = loginData;
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: senha
+    });
 
-  // Registro
-  register: async (registerData: RegisterData): Promise<User> => {
-    // Simulação de registro - em produção seria uma API
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const user: User = {
-      id: Date.now().toString(),
-      nome: registerData.nome,
-      email: registerData.email,
-      empresa: registerData.empresa,
-      telefone: registerData.telefone,
-      plano: 'trial',
-      dataInicio: new Date().toISOString(),
-      dataExpiracao: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
-      ativo: true,
-      lojasPermitidas: [],
-      createdAt: new Date().toISOString()
-    };
-    
+    if (error || !data.user) {
+      throw new Error(error?.message || 'Email ou senha inválidos');
+    }
+
+    // Salvar dados locais para consulta rápida (opcional)
+    const user = mapSupabaseUser(data.user, data.user.user_metadata);
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     return user;
   },
 
   // Logout
-  logout: () => {
+  logout: async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem(AUTH_STORAGE_KEY);
   },
 
-  // Atualizar perfil
-  updateProfile: (userData: Partial<User>): User => {
-    const currentUser = authService.getCurrentUser();
-    if (!currentUser) throw new Error('Usuário não encontrado');
-    
-    const updatedUser = { ...currentUser, ...userData };
+  // Usuário atual
+  getCurrentUser: (): User | null => {
+    const data = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!data) return null;
+    const user = JSON.parse(data);
+
+    // Checa expiração do trial
+    if (user.plano === 'trial' && new Date() > new Date(user.dataExpiracao)) {
+      user.ativo = false;
+    }
+    return user;
+  },
+
+  // Atualizar perfil (opcional)
+  updateProfile: async (userData: Partial<User>): Promise<User> => {
+    const user = authService.getCurrentUser();
+    if (!user) throw new Error('Usuário não encontrado');
+
+    // Atualiza no Supabase (opcional: ajuste a tabela, se usar table extra)
+    await supabase.auth.updateUser({
+      data: userData
+    });
+
+    const updatedUser = { ...user, ...userData };
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
     return updatedUser;
   },
@@ -88,10 +108,7 @@ export const authService = {
   hasAccessToLoja: (lojaId: string): boolean => {
     const user = authService.getCurrentUser();
     if (!user || !user.ativo) return false;
-    
-    // Se lojasPermitidas está vazio, tem acesso a todas
     if (user.lojasPermitidas.length === 0) return true;
-    
     return user.lojasPermitidas.includes(lojaId);
   },
 
@@ -99,11 +116,9 @@ export const authService = {
   isTrialExpired: (): boolean => {
     const user = authService.getCurrentUser();
     if (!user) return true;
-    
     if (user.plano === 'trial') {
       return new Date() > new Date(user.dataExpiracao);
     }
-    
     return false;
   },
 
@@ -111,12 +126,10 @@ export const authService = {
   getTrialDaysLeft: (): number => {
     const user = authService.getCurrentUser();
     if (!user || user.plano !== 'trial') return 0;
-    
     const now = new Date();
     const expiration = new Date(user.dataExpiracao);
     const diffTime = expiration.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
     return Math.max(0, diffDays);
   }
 };
