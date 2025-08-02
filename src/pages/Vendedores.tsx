@@ -423,4 +423,151 @@ const Vendedores = () => {
                       id="email"
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Ex: maria@email.com"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="telefone">Telefone</Label>
+                    <Input
+                      id="telefone"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                      placeholder="Ex: (11) 99999-9999"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="meta">Meta de Conversão (%)</Label>
+                    <Input
+                      id="meta"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={formData.meta}
+                      onChange={(e) => setFormData({ ...formData, meta: e.target.value.replace(/[^0-9]/g, '') })}
+                      placeholder="Ex: 25"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2">
+                    <Button type="button" variant="outline" onClick={resetForm}>
+                      Cancelar
+                    </Button>
+                    <Button type="submit">
+                      {editingVendedor ? 'Atualizar' : 'Cadastrar'}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+          <CardContent>
+            {vendedoresFiltrados.length === 0 ? (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {filtroLoja !== 'all' ? 'Nenhum vendedor nesta loja' : 'Nenhum vendedor cadastrado'}
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  {filtroLoja !== 'all' ? 'Tente selecionar outra loja' : 'Comece cadastrando seu primeiro vendedor'}
+                </p>
+                {filtroLoja === 'all' && (
+                  <Button onClick={() => setIsDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Cadastrar Primeiro Vendedor
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Loja</TableHead>
+                    <TableHead>E-mail</TableHead>
+                    <TableHead>Telefone</TableHead>
+                    <TableHead>Meta</TableHead>
+                    <TableHead>Performance</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vendedoresFiltrados
+                    .sort((a, b) => {
+                      // Ordena por performance/conversão DESC
+                      const perfA = getVendasDoVendedor(a.id).conversao;
+                      const perfB = getVendasDoVendedor(b.id).conversao;
+                      return perfB - perfA;
+                    })
+                    .map((vendedor) => {
+                      const performance = getVendasDoVendedor(vendedor.id);
+                      return (
+                        <TableRow key={vendedor.id}>
+                          <TableCell className="font-medium">{vendedor.nome}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <Store className="w-4 h-4 text-gray-400" />
+                              <span>{getLojaNome(vendedor.lojaId)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <Mail className="w-4 h-4 text-gray-400" />
+                              <span>{vendedor.email || 'N/A'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <Phone className="w-4 h-4 text-gray-400" />
+                              <span>{vendedor.telefone || 'N/A'}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
+                              {vendedor.meta}%
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              <div className={`font-medium ${
+                                performance.conversao >= Number(vendedor.meta) ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {performance.conversao.toFixed(1)}%
+                              </div>
+                              <div className="text-gray-500">
+                                {performance.totalVendas}/{performance.totalAtendimentos}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEdit(vendedor)}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDelete(vendedor.id)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default Vendedores;
