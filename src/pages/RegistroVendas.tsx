@@ -10,12 +10,12 @@ import { Plus, TrendingUp, Calendar, Users, Target } from 'lucide-react';
 import { Vendedor, Loja, RegistroVenda } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabaseClient';
+import { authService } from '@/lib/auth'; // <-- ADICIONADO FORA DO COMPONENTE
+
+const user = authService.getCurrentUser(); // <-- BUSCA O USUÁRIO FORA DO COMPONENTE
 
 const RegistroVendas = () => {
-import { authService } from '@/lib/auth';
-// ...
-const user = authService.getCurrentUser();
-const userId = user?.id;
+  const userId = user?.id;
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -154,7 +154,6 @@ const userId = user?.id;
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Registrar Vendas</h1>
           <p className="text-gray-600 mt-2">Registre os atendimentos e vendas dos vendedores</p>
         </div>
-
         {/* Estatísticas do Dia */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
@@ -194,7 +193,6 @@ const userId = user?.id;
             </CardContent>
           </Card>
         </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Formulário de Registro */}
           <Card>
@@ -287,7 +285,6 @@ const userId = user?.id;
               </form>
             </CardContent>
           </Card>
-
           {/* Registros Recentes */}
           <Card>
             <CardHeader>
@@ -333,7 +330,6 @@ const userId = user?.id;
             </CardContent>
           </Card>
         </div>
-
         {/* Tabela de Todos os Registros */}
         {registros.length > 0 && (
           <Card className="mt-8">
