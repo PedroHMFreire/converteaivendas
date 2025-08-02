@@ -45,21 +45,29 @@ const Header = () => {
     navigate('/login');
   };
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const getInitials = (name?: string) => {
+    if (!name || typeof name !== 'string') return '';
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase();
   };
 
   // BOTÃO DE TEMA
   const ThemeToggleButton = () => (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
       className="p-2 rounded-full border hover:bg-gray-200 dark:hover:bg-gray-800 transition"
-      title={`Alternar para tema ${theme === "dark" ? "claro" : "escuro"}`}
+      title={`Alternar para tema ${theme === 'dark' ? 'claro' : 'escuro'}`}
       style={{ marginRight: 4 }} // Deixa coladinho do avatar
     >
-      {theme === "dark"
-        ? <Sun className="w-5 h-5 text-yellow-500" />
-        : <Moon className="w-5 h-5 text-gray-600" />}
+      {theme === 'dark' ? (
+        <Sun className="w-5 h-5 text-yellow-500" />
+      ) : (
+        <Moon className="w-5 h-5 text-gray-600" />
+      )}
     </button>
   );
 
@@ -117,12 +125,12 @@ const Header = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <div className="flex flex-col space-y-1 p-2">
-                    <p className="text-sm font-medium leading-none">{user.nome}</p>
+                    <p className="text-sm font-medium leading-none">{user.nome || '-'}</p>
                     <p className="text-xs leading-none text-muted-foreground">
-                      {user.email}
+                      {user.email || '-'}
                     </p>
                     <p className="text-xs leading-none text-muted-foreground">
-                      {user.empresa}
+                      {user.empresa || '-'}
                     </p>
                   </div>
                   <DropdownMenuSeparator />
@@ -145,11 +153,7 @@ const Header = () => {
 
             {/* Mobile menu button */}
             <div className="md:hidden">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setIsMenuOpen(!isMenuOpen)}>
                 <Menu className="w-5 h-5" />
               </Button>
             </div>
