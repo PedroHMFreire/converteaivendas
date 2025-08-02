@@ -7,9 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import Header from '@/components/Header';
 import { Plus, Store, Edit, Trash2, MapPin, Phone, User } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { Loja } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
+import { supabase } from '@/lib/supabaseClient';
 
 const Lojas = () => {
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -21,46 +21,71 @@ const Lojas = () => {
     telefone: '',
     gerente: ''
   });
+  const [userId, setUserId] = useState<string>("");
 
   useEffect(() => {
-    loadLojas();
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (data?.user?.id) {
+        setUserId(data.user.id);
+        loadLojas(data.user.id);
+      }
+    };
+    fetchUser();
   }, []);
 
-  const loadLojas = () => {
-    const lojasData = storage.getLojas();
-    setLojas(lojasData);
+  const loadLojas = async (uid = userId) => {
+    if (!uid) return;
+    const { data, error } = await supabase
+      .from('lojas')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+    if (error) {
+      showError('Erro ao carregar lojas');
+      return;
+    }
+    setLojas(data || []);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!formData.nome || !formData.endereco || !formData.gerente) {
       showError('Preencha todos os campos obrigatórios');
       return;
     }
+    if (!userId) return;
 
     if (editingLoja) {
       // Editar loja existente
-      const lojasAtualizadas = lojas.map(loja => 
-        loja.id === editingLoja.id 
-          ? { ...loja, ...formData }
-          : loja
-      );
-      storage.setLojas(lojasAtualizadas);
-      showSuccess('Loja atualizada com sucesso!');
+      const { error } = await supabase
+        .from('lojas')
+        .update({ ...formData })
+        .eq('id', editingLoja.id)
+        .eq('user_id', userId);
+      if (error) {
+        showError('Erro ao atualizar loja');
+      } else {
+        showSuccess('Loja atualizada com sucesso!');
+        resetForm();
+        loadLojas();
+      }
     } else {
       // Criar nova loja
-      const novaLoja: Loja = {
-        id: Date.now().toString(),
-        ...formData,
-        createdAt: new Date().toISOString()
-      };
-      storage.addLoja(novaLoja);
-      showSuccess('Loja cadastrada com sucesso!');
+      const { error } = await supabase
+        .from('lojas')
+        .insert([{
+          ...formData,
+          user_id: userId
+        }]);
+      if (error) {
+        showError('Erro ao cadastrar loja');
+      } else {
+        showSuccess('Loja cadastrada com sucesso!');
+        resetForm();
+        loadLojas();
+      }
     }
-
-    resetForm();
-    loadLojas();
   };
 
   const handleEdit = (loja: Loja) => {
@@ -74,12 +99,19 @@ const Lojas = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (lojaId: string) => {
+  const handleDelete = async (lojaId: string) => {
     if (confirm('Tem certeza que deseja excluir esta loja?')) {
-      const lojasAtualizadas = lojas.filter(loja => loja.id !== lojaId);
-      storage.setLojas(lojasAtualizadas);
-      loadLojas();
-      showSuccess('Loja excluída com sucesso!');
+      const { error } = await supabase
+        .from('lojas')
+        .delete()
+        .eq('id', lojaId)
+        .eq('user_id', userId);
+      if (error) {
+        showError('Erro ao excluir loja');
+      } else {
+        showSuccess('Loja excluída com sucesso!');
+        loadLojas();
+      }
     }
   };
 
@@ -94,21 +126,46 @@ const Lojas = () => {
     setIsDialogOpen(false);
   };
 
-  const getVendedoresCount = (lojaId: string) => {
-    return storage.getVendedoresByLoja(lojaId).length;
+  // Busca quantos vendedores há para cada loja
+  const getVendedoresCount = async (lojaId: string): Promise<number> => {
+    const { data, error } = await supabase
+      .from('vendedores')
+      .select('*', { count: 'exact', head: true })
+      .eq('lojaId', lojaId)
+      .eq('user_id', userId);
+    return data?.length ?? 0;
   };
+
+  // Usando um hook para calcular os vendedores por loja e exibir
+  const [vendedoresPorLoja, setVendedoresPorLoja] = useState<{[lojaId: string]: number}>({});
+
+  useEffect(() => {
+    const fetchVendedoresCount = async () => {
+      let map: {[lojaId: string]: number} = {};
+      for (const loja of lojas) {
+        const { count } = await supabase
+          .from('vendedores')
+          .select('id', { count: 'exact', head: true })
+          .eq('lojaId', loja.id)
+          .eq('user_id', userId);
+        map[loja.id] = count || 0;
+      }
+      setVendedoresPorLoja(map);
+    };
+    if (lojas.length > 0 && userId) {
+      fetchVendedoresCount();
+    }
+  }, [lojas, userId]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
       <Header />
-      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Gerenciar Lojas</h1>
             <p className="text-gray-600 mt-2">Cadastre e gerencie suas lojas</p>
           </div>
-          
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => resetForm()}>
@@ -190,7 +247,7 @@ const Lojas = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {lojas.reduce((total, loja) => total + getVendedoresCount(loja.id), 0)}
+                {Object.values(vendedoresPorLoja).reduce((total, n) => total + n, 0)}
               </div>
             </CardContent>
           </Card>
@@ -202,7 +259,7 @@ const Lojas = () => {
             <CardContent>
               <div className="text-2xl font-bold">
                 {lojas.length > 0 
-                  ? (lojas.reduce((total, loja) => total + getVendedoresCount(loja.id), 0) / lojas.length).toFixed(1)
+                  ? (Object.values(vendedoresPorLoja).reduce((total, n) => total + n, 0) / lojas.length).toFixed(1)
                   : '0'
                 }
               </div>
@@ -266,7 +323,7 @@ const Lojas = () => {
                       </TableCell>
                       <TableCell>
                         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-                          {getVendedoresCount(loja.id)}
+                          {vendedoresPorLoja[loja.id] ?? 0}
                         </span>
                       </TableCell>
                       <TableCell>
