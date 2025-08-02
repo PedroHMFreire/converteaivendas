@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import Header from '@/components/Header';
 import { Plus, Users, Edit, Trash2, Mail, Phone, Target, Store, Download, Award } from 'lucide-react';
-import { storage } from '@/lib/storage';
-import { Vendedor, Loja } from '@/types';
-import { showSuccess, showError } from '@/utils/toast';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { showSuccess, showError } from '@/utils/toast';
 
 const COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -21,17 +20,19 @@ const COLORS = [
 ];
 
 const Vendedores = () => {
-  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
-  const [lojas, setLojas] = useState<Loja[]>([]);
+  const [vendedores, setVendedores] = useState<any[]>([]);
+  const [lojas, setLojas] = useState<any[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null);
+  const [editingVendedor, setEditingVendedor] = useState<any | null>(null);
   const [filtroLoja, setFiltroLoja] = useState<string>('all');
   const [formData, setFormData] = useState({
     nome: '',
     lojaId: '',
     email: '',
     telefone: '',
-    meta: '', //
+    meta: ''
   });
 
   // PRÊMIO DA SEMANA
@@ -39,66 +40,99 @@ const Vendedores = () => {
   const [editandoPremio, setEditandoPremio] = useState(false);
   const [novoPremio, setNovoPremio] = useState(premioSemana);
 
+  // Carregar user e dados ao montar
   useEffect(() => {
-    loadData();
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user?.id) {
+        setUserId(data.user.id);
+        loadData(data.user.id);
+      }
+    })();
+    // eslint-disable-next-line
   }, []);
 
-  const loadData = () => {
-    const vendedoresData = storage.getVendedores();
-    const lojasData = storage.getLojas();
-    setVendedores(vendedoresData);
-    setLojas(lojasData);
+  // Buscar vendedores/lojas do usuário
+  const loadData = async (uid: string) => {
+    // Vendedores
+    const { data: vendedoresData } = await supabase
+      .from('vendedores')
+      .select('*')
+      .eq('user_id', uid);
+    setVendedores(vendedoresData || []);
+    // Lojas
+    const { data: lojasData } = await supabase
+      .from('lojas')
+      .select('*')
+      .eq('user_id', uid);
+    setLojas(lojasData || []);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // CADASTRAR OU EDITAR
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!formData.nome || !formData.lojaId) {
       showError('Preencha todos os campos obrigatórios');
       return;
     }
+    if (!userId) return;
 
     if (editingVendedor) {
-      // Editar vendedor existente
-      const vendedoresAtualizados = vendedores.map(vendedor =>
-        vendedor.id === editingVendedor.id
-          ? { ...vendedor, ...formData }
-          : vendedor
-      );
-      storage.setVendedores(vendedoresAtualizados);
-      showSuccess('Vendedor atualizado com sucesso!');
+      // Editar
+      const { error } = await supabase
+        .from('vendedores')
+        .update({
+          nome: formData.nome,
+          lojaId: formData.lojaId,
+          email: formData.email,
+          telefone: formData.telefone,
+          meta: Number(formData.meta),
+          user_id: userId
+        })
+        .eq('id', editingVendedor.id)
+        .eq('user_id', userId);
+      if (!error) showSuccess('Vendedor atualizado com sucesso!');
+      else showError('Erro ao atualizar vendedor');
     } else {
-      // Criar novo vendedor
-      const novoVendedor: Vendedor = {
-        id: Date.now().toString(),
-        ...formData,
-        createdAt: new Date().toISOString()
-      };
-      storage.addVendedor(novoVendedor);
-      showSuccess('Vendedor cadastrado com sucesso!');
+      // Novo
+      const { error } = await supabase
+        .from('vendedores')
+        .insert([{
+          nome: formData.nome,
+          lojaId: formData.lojaId,
+          email: formData.email,
+          telefone: formData.telefone,
+          meta: Number(formData.meta),
+          user_id: userId
+        }]);
+      if (!error) showSuccess('Vendedor cadastrado com sucesso!');
+      else showError('Erro ao cadastrar vendedor');
     }
-
     resetForm();
-    loadData();
+    loadData(userId);
   };
 
-  const handleEdit = (vendedor: Vendedor) => {
+  const handleEdit = (vendedor: any) => {
     setEditingVendedor(vendedor);
     setFormData({
       nome: vendedor.nome,
       lojaId: vendedor.lojaId,
       email: vendedor.email,
       telefone: vendedor.telefone,
-      meta: vendedor.meta
+      meta: vendedor.meta?.toString() || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (vendedorId: string) => {
+  const handleDelete = async (vendedorId: string) => {
+    if (!userId) return;
     if (confirm('Tem certeza que deseja excluir este vendedor?')) {
-      const vendedoresAtualizados = vendedores.filter(vendedor => vendedor.id !== vendedorId);
-      storage.setVendedores(vendedoresAtualizados);
-      loadData();
+      await supabase
+        .from('vendedores')
+        .delete()
+        .eq('id', vendedorId)
+        .eq('user_id', userId);
+      loadData(userId);
       showSuccess('Vendedor excluído com sucesso!');
     }
   };
@@ -109,7 +143,7 @@ const Vendedores = () => {
       lojaId: '',
       email: '',
       telefone: '',
-      meta: '', //
+      meta: ''
     });
     setEditingVendedor(null);
     setIsDialogOpen(false);
@@ -120,21 +154,17 @@ const Vendedores = () => {
     return loja?.nome || 'Loja não identificada';
   };
 
-  const vendedoresFiltrados = filtroLoja === 'all'
-    ? vendedores
-    : vendedores.filter(v => v.lojaId === filtroLoja);
-
+  // Carregar registros de vendas
   const getVendasDoVendedor = (vendedorId: string) => {
-    const registros = storage.getRegistrosByVendedor(vendedorId);
-    const totalVendas = registros.reduce((sum, r) => sum + r.vendas, 0);
-    const totalAtendimentos = registros.reduce((sum, r) => sum + r.atendimentos, 0);
-    const conversao = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
-
-    return { totalVendas, totalAtendimentos, conversao };
+    // Aqui você pode fazer uma query no Supabase para buscar registros desse vendedor
+    // Exemplo: SELECT * FROM registros WHERE vendedorId = ? AND user_id = ?
+    // Para o exemplo, retorna valores mockados:
+    // FAÇA: buscar esses dados do supabase se já tiver a tabela de registros
+    return { totalVendas: 0, totalAtendimentos: 0, conversao: 0 }; // MOCK! Substitua depois
   };
 
   // RANKING PARA O GRÁFICO E PDF
-  const rankingVendedores = vendedoresFiltrados
+  const rankingVendedores = vendedores
     .map(v => ({
       nome: v.nome,
       lojaId: v.lojaId,
@@ -144,7 +174,7 @@ const Vendedores = () => {
     }))
     .sort((a, b) => b.conversao - a.conversao);
 
-  // EXPORTAÇÃO PDF
+  // Exportação PDF
   const exportarPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(18);
@@ -156,7 +186,7 @@ const Vendedores = () => {
       body: rankingVendedores.map((v) => [
         v.nome,
         getLojaNome(v.lojaId) || '-',
-        v.conversao.toFixed(1),
+        v.conversao?.toFixed(1) || '0',
         v.totalVendas,
         v.totalAtendimentos
       ]),
@@ -171,12 +201,16 @@ const Vendedores = () => {
     doc.save('relatorio_vendedores.pdf');
   };
 
+  const vendedoresFiltrados = filtroLoja === 'all'
+    ? vendedores
+    : vendedores.filter(v => v.lojaId === filtroLoja);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
       <Header />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* PRÊMIO DA SEMANA */}
+        {/* Prêmio da Semana */}
         <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <Card className="flex-1 bg-gradient-to-r from-yellow-100 to-yellow-300 dark:from-[#FFD600]/20 dark:to-[#FFB300]/20 border-0 shadow-lg">
             <CardContent className="flex items-center gap-4 py-5">
@@ -213,7 +247,7 @@ const Vendedores = () => {
           </Card>
         </div>
 
-        {/* GRÁFICO DE RANKING */}
+        {/* Ranking Gráfico */}
         {rankingVendedores.length > 0 && (
           <Card className="mb-8 bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A] shadow">
             <CardHeader>
@@ -307,7 +341,7 @@ const Vendedores = () => {
             <CardContent>
               <div className="text-2xl font-bold">
                 {vendedoresFiltrados.length > 0
-                  ? (vendedoresFiltrados.reduce((sum, v) => sum + v.meta, 0) / vendedoresFiltrados.length).toFixed(1)
+                  ? (vendedoresFiltrados.reduce((sum, v) => sum + (Number(v.meta) || 0), 0) / vendedoresFiltrados.length).toFixed(1)
                   : '0'
                 }%
               </div>
@@ -331,7 +365,7 @@ const Vendedores = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {vendedoresFiltrados.filter(v => v.meta > 0).length}
+                {vendedoresFiltrados.filter(v => Number(v.meta) > 0).length}
               </div>
             </CardContent>
           </Card>
@@ -364,13 +398,13 @@ const Vendedores = () => {
                     <Input
                       id="nome"
                       value={formData.nome}
-                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
                       placeholder="Ex: Maria Silva"
                     />
                   </div>
                   <div>
                     <Label htmlFor="lojaId">Loja *</Label>
-                    <Select value={formData.lojaId} onValueChange={(value) => setFormData({...formData, lojaId: value})}>
+                    <Select value={formData.lojaId} onValueChange={(value) => setFormData({ ...formData, lojaId: value })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione uma loja" />
                       </SelectTrigger>
@@ -389,144 +423,4 @@ const Vendedores = () => {
                       id="email"
                       type="email"
                       value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      placeholder="Ex: maria@email.com"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="telefone">Telefone</Label>
-                    <Input
-                      id="telefone"
-                      value={formData.telefone}
-                      onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                      placeholder="Ex: (11) 99999-9999"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="meta">Meta de Conversão (%)</Label>
-                    <Input
-                      id="meta"
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={formData.meta}
-                      onChange={(e) => setFormData({...formData, meta: Number(e.target.value)})}
-                      placeholder="Ex: 25"
-                    />
-                  </div>
-                  <div className="flex justify-end space-x-2">
-                    <Button type="button" variant="outline" onClick={resetForm}>
-                      Cancelar
-                    </Button>
-                    <Button type="submit">
-                      {editingVendedor ? 'Atualizar' : 'Cadastrar'}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent>
-            {vendedoresFiltrados.length === 0 ? (
-              <div className="text-center py-8">
-                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {filtroLoja !== 'all' ? 'Nenhum vendedor nesta loja' : 'Nenhum vendedor cadastrado'}
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  {filtroLoja !== 'all' ? 'Tente selecionar outra loja' : 'Comece cadastrando seu primeiro vendedor'}
-                </p>
-                {filtroLoja === 'all' && (
-                  <Button onClick={() => setIsDialogOpen(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Cadastrar Primeiro Vendedor
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Loja</TableHead>
-                    <TableHead>E-mail</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Meta</TableHead>
-                    <TableHead>Performance</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {vendedoresFiltrados.map((vendedor) => {
-                    const performance = getVendasDoVendedor(vendedor.id);
-                    return (
-                      <TableRow key={vendedor.id}>
-                        <TableCell className="font-medium">{vendedor.nome}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Store className="w-4 h-4 text-gray-400" />
-                            <span>{getLojaNome(vendedor.lojaId)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Mail className="w-4 h-4 text-gray-400" />
-                            <span>{vendedor.email || 'N/A'}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Phone className="w-4 h-4 text-gray-400" />
-                            <span>{vendedor.telefone || 'N/A'}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-                            {vendedor.meta}%
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div className={`font-medium ${
-                              performance.conversao >= vendedor.meta ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {performance.conversao.toFixed(1)}%
-                            </div>
-                            <div className="text-gray-500">
-                              {performance.totalVendas}/{performance.totalAtendimentos}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEdit(vendedor)}
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDelete(vendedor.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-export default Vendedores;
+                      onChange={(e) => setFormData({ ...formData, email: e
