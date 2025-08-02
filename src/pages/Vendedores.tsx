@@ -31,7 +31,7 @@ const Vendedores = () => {
     lojaId: '',
     email: '',
     telefone: '',
-    meta: 0
+    meta:
   });
 
   // PRÊMIO DA SEMANA
