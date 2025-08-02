@@ -11,8 +11,6 @@ import { Plus, Users, Edit, Trash2, Mail, Phone, Target, Store, Download, Award 
 import { storage } from '@/lib/storage';
 import { Vendedor, Loja } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
-
-// IMPORTS DO GRÁFICO E PDF
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -54,7 +52,7 @@ const Vendedores = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.nome || !formData.lojaId) {
       showError('Preencha todos os campos obrigatórios');
       return;
@@ -62,8 +60,8 @@ const Vendedores = () => {
 
     if (editingVendedor) {
       // Editar vendedor existente
-      const vendedoresAtualizados = vendedores.map(vendedor => 
-        vendedor.id === editingVendedor.id 
+      const vendedoresAtualizados = vendedores.map(vendedor =>
+        vendedor.id === editingVendedor.id
           ? { ...vendedor, ...formData }
           : vendedor
       );
@@ -119,7 +117,7 @@ const Vendedores = () => {
 
   const getLojaNome = (lojaId: string) => {
     const loja = lojas.find(l => l.id === lojaId);
-    return loja?.nome || 'Loja não encontrada';
+    return loja?.nome || 'Loja não identificada';
   };
 
   const vendedoresFiltrados = filtroLoja === 'all'
@@ -131,38 +129,44 @@ const Vendedores = () => {
     const totalVendas = registros.reduce((sum, r) => sum + r.vendas, 0);
     const totalAtendimentos = registros.reduce((sum, r) => sum + r.atendimentos, 0);
     const conversao = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
-    
+
     return { totalVendas, totalAtendimentos, conversao };
   };
 
-  // RANKING PARA O GRÁFICO
-const rankingVendedores = vendedoresFiltrados
-  .map(v => ({
-    nome: v.nome,
-    lojaId: v.lojaId, // ESSA LINHA!
-    conversao: getVendasDoVendedor(v.id).conversao,
-    totalVendas: getVendasDoVendedor(v.id).totalVendas,
-    totalAtendimentos: getVendasDoVendedor(v.id).totalAtendimentos
-  }))
-  .sort((a, b) => b.conversao - a.conversao);
+  // RANKING PARA O GRÁFICO E PDF
+  const rankingVendedores = vendedoresFiltrados
+    .map(v => ({
+      nome: v.nome,
+      lojaId: v.lojaId,
+      conversao: getVendasDoVendedor(v.id).conversao,
+      totalVendas: getVendasDoVendedor(v.id).totalVendas,
+      totalAtendimentos: getVendasDoVendedor(v.id).totalAtendimentos
+    }))
+    .sort((a, b) => b.conversao - a.conversao);
 
-autoTable(doc, {
-  startY: 40,
-  head: [['Nome', 'Loja', 'Conversão (%)', 'Vendas', 'Atendimentos']],
-  body: rankingVendedores.map((v, idx) => [
-    v.nome,
-    getLojaNome(v.lojaId) || '-',
-    v.conversao.toFixed(1),
-    v.totalVendas,
-    v.totalAtendimentos
-  ]),
-  theme: 'striped',
-  headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
-  bodyStyles: { textColor: 60 },
-  alternateRowStyles: { fillColor: [237, 242, 247] },
-  styles: { fontSize: 10 },
-  margin: { left: 14, right: 14 }
-});
+  // EXPORTAÇÃO PDF
+  const exportarPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Relatório de Vendedores", 14, 22);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Nome', 'Loja', 'Conversão (%)', 'Vendas', 'Atendimentos']],
+      body: rankingVendedores.map((v) => [
+        v.nome,
+        getLojaNome(v.lojaId) || '-',
+        v.conversao.toFixed(1),
+        v.totalVendas,
+        v.totalAtendimentos
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+      bodyStyles: { textColor: 60 },
+      alternateRowStyles: { fillColor: [237, 242, 247] },
+      styles: { fontSize: 10 },
+      margin: { left: 14, right: 14 }
+    });
 
     doc.save('relatorio_vendedores.pdf');
   };
@@ -170,7 +174,7 @@ autoTable(doc, {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
       <Header />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* PRÊMIO DA SEMANA */}
         <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -187,6 +191,7 @@ autoTable(doc, {
                       value={novoPremio}
                       onChange={e => setNovoPremio(e.target.value)}
                       className="flex-1"
+                      maxLength={60}
                     />
                     <Button size="sm" onClick={() => { setPremioSemana(novoPremio); setEditandoPremio(false); }}>
                       Salvar
@@ -301,7 +306,7 @@ autoTable(doc, {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {vendedoresFiltrados.length > 0 
+                {vendedoresFiltrados.length > 0
                   ? (vendedoresFiltrados.reduce((sum, v) => sum + v.meta, 0) / vendedoresFiltrados.length).toFixed(1)
                   : '0'
                 }%
@@ -336,6 +341,90 @@ autoTable(doc, {
         <Card>
           <CardHeader>
             <CardTitle>Lista de Vendedores</CardTitle>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  className="ml-4"
+                  onClick={() => resetForm()}
+                  variant="outline"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {editingVendedor ? 'Editar Vendedor' : 'Cadastrar Vendedor'}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingVendedor ? 'Editar Vendedor' : 'Novo Vendedor'}
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <Label htmlFor="nome">Nome do Vendedor *</Label>
+                    <Input
+                      id="nome"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                      placeholder="Ex: Maria Silva"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lojaId">Loja *</Label>
+                    <Select value={formData.lojaId} onValueChange={(value) => setFormData({...formData, lojaId: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma loja" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lojas.map((loja) => (
+                          <SelectItem key={loja.id} value={loja.id}>
+                            {loja.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="email">E-mail</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                      placeholder="Ex: maria@email.com"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="telefone">Telefone</Label>
+                    <Input
+                      id="telefone"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                      placeholder="Ex: (11) 99999-9999"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="meta">Meta de Conversão (%)</Label>
+                    <Input
+                      id="meta"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={formData.meta}
+                      onChange={(e) => setFormData({...formData, meta: Number(e.target.value)})}
+                      placeholder="Ex: 25"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-2">
+                    <Button type="button" variant="outline" onClick={resetForm}>
+                      Cancelar
+                    </Button>
+                    <Button type="submit">
+                      {editingVendedor ? 'Atualizar' : 'Cadastrar'}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent>
             {vendedoresFiltrados.length === 0 ? (
