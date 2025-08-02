@@ -16,7 +16,7 @@ const AuthGuard = ({ children }: AuthGuardProps) => {
     let active = true;
 
     const checkAuth = async () => {
-      const currentUser = authService.getCurrentUser();
+      const currentUser = await authService.getCurrentUser();
 
       if (!currentUser) {
         // Não autenticado
@@ -37,7 +37,6 @@ const AuthGuard = ({ children }: AuthGuardProps) => {
           setIsLoading(false);
         }
       } catch (err) {
-        // Em caso de erro na verificação, derruba para login (ou ajustar conforme lógica desejada)
         console.error('Erro ao validar usuário:', err);
         navigate('/login');
       }
