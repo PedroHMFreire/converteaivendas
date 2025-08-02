@@ -136,45 +136,33 @@ const Vendedores = () => {
   };
 
   // RANKING PARA O GRÁFICO
-  const rankingVendedores = vendedoresFiltrados
-    .map(v => ({
-      nome: v.nome,
-      conversao: getVendasDoVendedor(v.id).conversao,
-      totalVendas: getVendasDoVendedor(v.id).totalVendas,
-      totalAtendimentos: getVendasDoVendedor(v.id).totalAtendimentos
-    }))
-    .sort((a, b) => b.conversao - a.conversao);
+const rankingVendedores = vendedoresFiltrados
+  .map(v => ({
+    nome: v.nome,
+    lojaId: v.lojaId, // ESSA LINHA!
+    conversao: getVendasDoVendedor(v.id).conversao,
+    totalVendas: getVendasDoVendedor(v.id).totalVendas,
+    totalAtendimentos: getVendasDoVendedor(v.id).totalAtendimentos
+  }))
+  .sort((a, b) => b.conversao - a.conversao);
 
-  // EXPORTAR PDF
-  const exportarPDF = () => {
-    const doc = new jsPDF();
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(20);
-    doc.setTextColor('#0B2447');
-    doc.text('Relatório dos Vendedores', 14, 20);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(12);
-    doc.setTextColor('#364152');
-    doc.text(`Prêmio da Semana: ${premioSemana}`, 14, 30);
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Nome', 'Loja', 'Conversão (%)', 'Vendas', 'Atendimentos']],
-      body: rankingVendedores.map((v, idx) => [
-        v.nome,
-        getLojaNome(lojas.find(l => l.nome === v.nome)?.id || '') || '-',
-        v.conversao.toFixed(1),
-        v.totalVendas,
-        v.totalAtendimentos
-      ]),
-      theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
-      bodyStyles: { textColor: 60 },
-      alternateRowStyles: { fillColor: [237, 242, 247] },
-      styles: { fontSize: 10 },
-      margin: { left: 14, right: 14 }
-    });
+autoTable(doc, {
+  startY: 40,
+  head: [['Nome', 'Loja', 'Conversão (%)', 'Vendas', 'Atendimentos']],
+  body: rankingVendedores.map((v, idx) => [
+    v.nome,
+    getLojaNome(v.lojaId) || '-',
+    v.conversao.toFixed(1),
+    v.totalVendas,
+    v.totalAtendimentos
+  ]),
+  theme: 'striped',
+  headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+  bodyStyles: { textColor: 60 },
+  alternateRowStyles: { fillColor: [237, 242, 247] },
+  styles: { fontSize: 10 },
+  margin: { left: 14, right: 14 }
+});
 
     doc.save('relatorio_vendedores.pdf');
   };
