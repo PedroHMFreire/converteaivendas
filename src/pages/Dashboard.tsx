@@ -8,73 +8,54 @@ import Header from '@/components/Header';
 import TrialBanner from '@/components/TrialBanner';
 import AuthGuard from '@/components/AuthGuard';
 import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
-import { 
-  TrendingUp, 
-  Users, 
-  Store, 
-  Target,
-  Calendar,
-  Download
-} from 'lucide-react';
-import { calculateDashboardData, formatPercentage, formatDate } from '@/lib/dashboard-utils';
+import { TrendingUp, Users, Store, Target, Calendar, Download } from 'lucide-react';
+import { formatPercentage, formatDate } from '@/lib/dashboard-utils';
 import { DashboardData } from '@/types';
-
-// IMPORTAÇÕES PARA PDF
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
+
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
+  const { user } = useAuth();
 
   useEffect(() => {
-    // Definir período padrão (mês atual)
     const hoje = new Date();
     const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    
     setDataInicio(inicioMes.toISOString().split('T')[0]);
     setDataFim(hoje.toISOString().split('T')[0]);
-    
-    loadDashboardData();
-  }, []);
+    if (user) loadDashboardData(inicioMes.toISOString().split('T')[0], hoje.toISOString().split('T')[0]);
+  }, [user]);
 
-  const loadDashboardData = (inicio?: string, fim?: string) => {
-    const data = calculateDashboardData(inicio, fim);
-    setDashboardData(data);
+  const loadDashboardData = async (inicio?: string, fim?: string) => {
+    if (!user) return;
+    // Aqui você deve adaptar o fetch para buscar dados por user_id e período
+    // Exemplo: let data = await fetchDashboardDataFromSupabase(user.id, inicio, fim);
+    // Por ora, vamos usar um placeholder (você deve adaptar conforme seu backend):
+    const { data, error } = await supabase.rpc('calculate_dashboard_data', { user_id: user.id, inicio, fim });
+    if (!error && data) setDashboardData(data);
   };
 
   const handleFilterChange = () => {
     loadDashboardData(dataInicio, dataFim);
   };
 
-  // --- FUNÇÃO PARA EXPORTAR PDF ---
   const handleExportPDF = () => {
     if (!dashboardData) return;
-
     const doc = new jsPDF();
-
-    // Branding/Logo (opcional: se quiser imagem, só avisar)
     doc.setFontSize(22);
-    doc.setTextColor(33, 150, 243); // azul Convertê
+    doc.setTextColor(33, 150, 243);
     doc.text('Relatório de Conversão - Convertê', 14, 18);
-
     doc.setDrawColor(33, 150, 243);
     doc.line(14, 21, 196, 21);
-
     doc.setFontSize(12);
     doc.setTextColor(80, 80, 80);
     doc.text(`Exportado em: ${new Date().toLocaleDateString()}`, 14, 28);
@@ -95,15 +76,11 @@ const Dashboard = () => {
       styles: { fontSize: 12, textColor: [33, 37, 41] }
     });
 
-    // Assinatura do sistema
     doc.setFontSize(10);
     doc.setTextColor(160, 160, 160);
     doc.text('Sistema Convertê - Relatório gerado automaticamente', 14, doc.internal.pageSize.getHeight() - 10);
-
     doc.save('relatorio-dashboard.pdf');
   };
-
-  const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
   if (!dashboardData) {
     return (
@@ -125,12 +102,8 @@ const Dashboard = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
         <Header />
-        
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Banner de Trial */}
           <TrialBanner />
-
-          {/* Filtros */}
           <Card className="mb-8 bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2 text-gray-900 dark:text-[#F3F4F6]">
@@ -217,7 +190,7 @@ const Dashboard = () => {
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={dashboardData.conversaoPorDia}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"  /* light */  />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis 
                       dataKey="data" 
                       tickFormatter={(value) => formatDate(value)}
@@ -295,8 +268,6 @@ const Dashboard = () => {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Distribuição de Conversão */}
             <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
               <CardHeader>
                 <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Distribuição por Loja</CardTitle>
