@@ -7,11 +7,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import Header from '@/components/Header';
 import { Plus, TrendingUp, Calendar, Users, Target } from 'lucide-react';
-import { storage } from '@/lib/storage';
 import { Vendedor, Loja, RegistroVenda } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/hooks/useAuth';
 
 const RegistroVendas = () => {
+  const { user } = useAuth();
+  const userId = user?.id;
+
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [registros, setRegistros] = useState<RegistroVenda[]>([]);
@@ -24,22 +28,39 @@ const RegistroVendas = () => {
   });
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (userId) {
+      loadData();
+    }
+  }, [userId]);
 
-  const loadData = () => {
-    const vendedoresData = storage.getVendedores();
-    const lojasData = storage.getLojas();
-    const registrosData = storage.getRegistros();
-    
-    setVendedores(vendedoresData);
-    setLojas(lojasData);
-    setRegistros(registrosData);
+  const loadData = async () => {
+    // Lojas
+    const { data: lojasData } = await supabase
+      .from('lojas')
+      .select('*')
+      .eq('user_id', userId)
+      .order('nome', { ascending: true });
+
+    // Vendedores
+    const { data: vendedoresData } = await supabase
+      .from('vendedores')
+      .select('*')
+      .eq('user_id', userId);
+
+    // Registros de vendas
+    const { data: registrosData } = await supabase
+      .from('registro_vendas')
+      .select('*')
+      .eq('user_id', userId);
+
+    setLojas(lojasData || []);
+    setVendedores(vendedoresData || []);
+    setRegistros(registrosData || []);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.vendedorId || !formData.data || formData.atendimentos < 0 || formData.vendas < 0) {
       showError('Preencha todos os campos corretamente');
       return;
@@ -58,20 +79,23 @@ const RegistroVendas = () => {
 
     const conversao = formData.atendimentos > 0 ? (formData.vendas / formData.atendimentos) * 100 : 0;
 
-    const novoRegistro: RegistroVenda = {
-      id: Date.now().toString(),
+    const { error } = await supabase.from('registro_vendas').insert([{
+      user_id: userId,
       vendedorId: formData.vendedorId,
       lojaId: vendedor.lojaId,
       data: formData.data,
       atendimentos: formData.atendimentos,
       vendas: formData.vendas,
       conversao,
-      createdAt: new Date().toISOString()
-    };
+      createdAt: new Date().toISOString(),
+    }]);
 
-    storage.addRegistro(novoRegistro);
+    if (error) {
+      showError('Erro ao salvar registro.');
+      return;
+    }
+
     showSuccess('Registro de vendas salvo com sucesso!');
-    
     resetForm();
     loadData();
   };
@@ -99,18 +123,18 @@ const RegistroVendas = () => {
     ? vendedores
     : vendedores.filter(v => v.lojaId === filtroLoja);
 
-  const registrosRecentes = registros
+  const registrosRecentes = [...registros]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 10);
 
   const estatisticasHoje = () => {
     const hoje = new Date().toISOString().split('T')[0];
     const registrosHoje = registros.filter(r => r.data === hoje);
-    
+
     const totalAtendimentos = registrosHoje.reduce((sum, r) => sum + r.atendimentos, 0);
     const totalVendas = registrosHoje.reduce((sum, r) => sum + r.vendas, 0);
     const conversaoMedia = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
-    
+
     return {
       totalAtendimentos,
       totalVendas,
@@ -124,7 +148,6 @@ const RegistroVendas = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
       <Header />
-      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Registrar Vendas</h1>
@@ -198,7 +221,6 @@ const RegistroVendas = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div>
                   <Label htmlFor="vendedorId">Vendedor *</Label>
                   <Select value={formData.vendedorId} onValueChange={(value) => setFormData({...formData, vendedorId: value})}>
@@ -214,7 +236,6 @@ const RegistroVendas = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div>
                   <Label htmlFor="data">Data *</Label>
                   <Input
@@ -224,7 +245,6 @@ const RegistroVendas = () => {
                     onChange={(e) => setFormData({...formData, data: e.target.value})}
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="atendimentos">Número de Atendimentos *</Label>
                   <Input
@@ -236,7 +256,6 @@ const RegistroVendas = () => {
                     placeholder="Ex: 10"
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="vendas">Número de Vendas *</Label>
                   <Input
@@ -249,7 +268,6 @@ const RegistroVendas = () => {
                     placeholder="Ex: 3"
                   />
                 </div>
-
                 {formData.atendimentos > 0 && (
                   <div className="p-4 bg-blue-50 rounded-lg">
                     <div className="text-sm text-blue-600 font-medium">
@@ -257,7 +275,6 @@ const RegistroVendas = () => {
                     </div>
                   </div>
                 )}
-
                 <div className="flex justify-end space-x-2">
                   <Button type="button" variant="outline" onClick={resetForm}>
                     Limpar
@@ -274,7 +291,6 @@ const RegistroVendas = () => {
           <Card>
             <CardHeader>
               <CardTitle>Registros Recentes</CardTitle>
-            
             </CardHeader>
             <CardContent>
               {registrosRecentes.length === 0 ? (
@@ -298,7 +314,7 @@ const RegistroVendas = () => {
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold text-blue-600">
-                            {registro.conversao.toFixed(1)}%
+                            {registro.conversao?.toFixed(1)}%
                           </div>
                           <div className="text-sm text-gray-500">
                             {new Date(registro.data).toLocaleDateString('pt-BR')}
@@ -336,7 +352,7 @@ const RegistroVendas = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {registros
+                  {[...registros]
                     .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
                     .slice(0, 20)
                     .map((registro) => (
@@ -355,7 +371,7 @@ const RegistroVendas = () => {
                           registro.conversao >= 25 ? 'text-green-600' : 
                           registro.conversao >= 15 ? 'text-yellow-600' : 'text-red-600'
                         }`}>
-                          {registro.conversao.toFixed(1)}%
+                          {registro.conversao?.toFixed(1)}%
                         </span>
                       </TableCell>
                     </TableRow>
