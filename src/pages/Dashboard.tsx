@@ -67,7 +67,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-center h-96">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Carregando dashboard...</p>
+              <p className="text-gray-600 dark:text-[#A0AEC0]">Carregando dashboard...</p>
             </div>
           </div>
         </div>
@@ -77,7 +77,7 @@ const Dashboard = () => {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
         <Header />
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -85,9 +85,9 @@ const Dashboard = () => {
           <TrialBanner />
 
           {/* Filtros */}
-          <Card className="mb-8">
+          <Card className="mb-8 bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
+              <CardTitle className="flex items-center space-x-2 text-gray-900 dark:text-[#F3F4F6]">
                 <Calendar className="w-5 h-5" />
                 <span>Filtros de Período</span>
               </CardTitle>
@@ -95,27 +95,29 @@ const Dashboard = () => {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div>
-                  <Label htmlFor="dataInicio">Data Início</Label>
+                  <Label htmlFor="dataInicio" className="text-gray-700 dark:text-[#A0AEC0]">Data Início</Label>
                   <Input
                     id="dataInicio"
                     type="date"
                     value={dataInicio}
                     onChange={(e) => setDataInicio(e.target.value)}
+                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="dataFim">Data Fim</Label>
+                  <Label htmlFor="dataFim" className="text-gray-700 dark:text-[#A0AEC0]">Data Fim</Label>
                   <Input
                     id="dataFim"
                     type="date"
                     value={dataFim}
                     onChange={(e) => setDataFim(e.target.value)}
+                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
                   />
                 </div>
-                <Button onClick={handleFilterChange}>
+                <Button className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600">
                   Aplicar Filtros
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]">
                   <Download className="w-4 h-4 mr-2" />
                   Exportar
                 </Button>
@@ -137,40 +139,46 @@ const Dashboard = () => {
               value={dashboardData.totalAtendimentos.toLocaleString()}
               subtitle="No período selecionado"
               icon={Users}
+              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
             />
             <MetricCard
               title="Total de Vendas"
               value={dashboardData.totalVendas.toLocaleString()}
               subtitle="Vendas efetivadas"
               icon={Target}
+              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
             />
             <MetricCard
               title="Melhor Vendedor"
               value={dashboardData.melhorVendedor}
               subtitle="Maior conversão do período"
               icon={Store}
+              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
             />
           </div>
 
           {/* Gráficos */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             {/* Conversão por Dia */}
-            <Card>
+            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
               <CardHeader>
-                <CardTitle>Conversão por Dia</CardTitle>
+                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Conversão por Dia</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={dashboardData.conversaoPorDia}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb"  /* light */  />
                     <XAxis 
                       dataKey="data" 
                       tickFormatter={(value) => formatDate(value)}
+                      stroke="#64748B"
+                      tick={{ fill: "#A0AEC0" }}
                     />
-                    <YAxis />
+                    <YAxis stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
                     <Tooltip 
                       labelFormatter={(value) => formatDate(value)}
                       formatter={(value: number) => [formatPercentage(value), 'Conversão']}
+                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
                     />
                     <Line 
                       type="monotone" 
@@ -184,17 +192,19 @@ const Dashboard = () => {
             </Card>
 
             {/* Conversão por Loja */}
-            <Card>
+            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
               <CardHeader>
-                <CardTitle>Conversão por Loja</CardTitle>
+                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Conversão por Loja</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={dashboardData.conversaoPorLoja}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="loja" />
-                    <YAxis />
-                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="loja" stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
+                    <YAxis stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
+                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']}
+                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
+                    />
                     <Bar dataKey="conversao" fill="#10B981" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -204,14 +214,14 @@ const Dashboard = () => {
 
           {/* Ranking de Vendedores */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card>
+            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
               <CardHeader>
-                <CardTitle>Ranking de Vendedores</CardTitle>
+                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Ranking de Vendedores</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {dashboardData.conversaoPorVendedor.slice(0, 10).map((vendedor, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-[#222C43] rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
                           index === 0 ? 'bg-yellow-500' : 
@@ -221,13 +231,13 @@ const Dashboard = () => {
                           {index + 1}
                         </div>
                         <div>
-                          <div className="font-medium">{vendedor.vendedor}</div>
-                          <div className="text-sm text-gray-500">
+                          <div className="font-medium text-gray-900 dark:text-[#F3F4F6]">{vendedor.vendedor}</div>
+                          <div className="text-sm text-gray-500 dark:text-[#A0AEC0]">
                             {vendedor.vendas} vendas / {vendedor.atendimentos} atendimentos
                           </div>
                         </div>
                       </div>
-                      <div className="text-lg font-bold text-blue-600">
+                      <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
                         {formatPercentage(vendedor.conversao)}
                       </div>
                     </div>
@@ -237,9 +247,9 @@ const Dashboard = () => {
             </Card>
 
             {/* Distribuição de Conversão */}
-            <Card>
+            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
               <CardHeader>
-                <CardTitle>Distribuição por Loja</CardTitle>
+                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Distribuição por Loja</CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -258,7 +268,9 @@ const Dashboard = () => {
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']} />
+                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']}
+                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
