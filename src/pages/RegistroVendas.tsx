@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Header from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import Header from '@/components/Header';
 import { Plus, TrendingUp, Calendar, Users, Target } from 'lucide-react';
-import { Vendedor, Loja, RegistroVenda } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabaseClient';
 import { authService } from '@/lib/auth';
+import { Vendedor, Loja, RegistroVenda } from '@/types';
+
+const dateOnly = (d: string) => new Date(d).toISOString().split('T')[0];
 
 const RegistroVendas = () => {
-  // OBTÉM O USUÁRIO SEMPRE QUE O COMPONENTE É CARREGADO
-  const user = authService.getCurrentUser();
-  const userId = user?.id;
+  const navigate = useNavigate();
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -27,79 +28,94 @@ const RegistroVendas = () => {
     atendimentos: 0,
     vendas: 0
   });
+  const [userId, setUserId] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (userId) {
-      loadData();
-    }
-    // eslint-disable-next-line
-  }, [userId]);
+  const estatisticasHoje = () => {
+    const hoje = new Date().toISOString().split('T')[0];
+    const registrosHoje = registros.filter(r => dateOnly(r.data) === hoje);
 
-  const loadData = async () => {
-    // Lojas
-    const { data: lojasData } = await supabase
-      .from('lojas')
-      .select('*')
-      .eq('user_id', userId)
-      .order('nome', { ascending: true });
+    const totalAtendimentos = registrosHoje.reduce((sum, r) => sum + (r.atendimentos || 0), 0);
+    const totalVendas = registrosHoje.reduce((sum, r) => sum + (r.vendas || 0), 0);
+    const conversaoMedia = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
 
-    // Vendedores
-    const { data: vendedoresData } = await supabase
-      .from('vendedores')
-      .select('*')
-      .eq('user_id', userId);
-
-    // Registros de vendas
-    const { data: registrosData } = await supabase
-      .from('registro_vendas')
-      .select('*')
-      .eq('user_id', userId);
-
-    setLojas(lojasData || []);
-    setVendedores(vendedoresData || []);
-    setRegistros(registrosData || []);
+    return {
+      totalAtendimentos,
+      totalVendas,
+      conversaoMedia,
+      registros: registrosHoje.length
+    };
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const stats = estatisticasHoje();
 
-    if (!formData.vendedorId || !formData.data || formData.atendimentos < 0 || formData.vendas < 0) {
-      showError('Preencha todos os campos corretamente');
-      return;
+  useEffect(() => {
+    const init = async () => {
+      const currentUser = await authService.getCurrentUser();
+      if (!currentUser?.id) {
+        showError('Usuário não autenticado');
+        return;
+      }
+      setUserId(currentUser.id);
+      await loadData(currentUser.id);
+    };
+    init();
+    // eslint-disable-next-line
+  }, []);
+
+  const loadData = async (uid: string) => {
+    setLoading(true);
+    try {
+      // Lojas
+      const { data: lojasData, error: errLojas } = await supabase
+        .from('lojas')
+        .select('*')
+        .eq('user_id', uid)
+        .order('nome', { ascending: true });
+      if (errLojas) {
+        console.error('Erro carregando lojas:', errLojas);
+        showError(errLojas.message || 'Erro ao carregar lojas');
+      } else {
+        setLojas(lojasData || []);
+      }
+
+      // Vendedores
+      const { data: vendedoresData, error: errVendedores } = await supabase
+        .from('vendedores')
+        .select('*')
+        .eq('user_id', uid);
+      if (errVendedores) {
+        console.error('Erro carregando vendedores:', errVendedores);
+        showError(errVendedores.message || 'Erro ao carregar vendedores');
+      } else {
+        setVendedores(vendedoresData || []);
+      }
+
+      // Registros de vendas (com alias para createdAt)
+      const { data: registrosData, error: errRegistros } = await supabase
+        .from('registro_vendas')
+        .select('*, created_at as createdAt')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+
+      if (errRegistros) {
+        console.error('Erro carregando registros:', errRegistros);
+        showError(errRegistros.message || 'Erro ao carregar registros');
+      } else {
+        const normalized = (registrosData || []).map((r: any) => ({
+          ...r,
+          createdAt: r.createdAt || r.created_at,
+          data: r.data,
+          atendimentos: r.atendimentos ?? 0,
+          vendas: r.vendas ?? 0,
+          conversao: r.conversao ?? 0,
+        }));
+        setRegistros(normalized);
+      }
+    } finally {
+      setLoading(false);
     }
-
-    if (formData.vendas > formData.atendimentos) {
-      showError('O número de vendas não pode ser maior que o número de atendimentos');
-      return;
-    }
-
-    const vendedor = vendedores.find(v => v.id === formData.vendedorId);
-    if (!vendedor) {
-      showError('Vendedor não encontrado');
-      return;
-    }
-
-    const conversao = formData.atendimentos > 0 ? (formData.vendas / formData.atendimentos) * 100 : 0;
-
-    const { error } = await supabase.from('registro_vendas').insert([{
-      user_id: userId,
-      vendedorId: formData.vendedorId,
-      lojaId: vendedor.lojaId,
-      data: formData.data,
-      atendimentos: formData.atendimentos,
-      vendas: formData.vendas,
-      conversao,
-      createdAt: new Date().toISOString(),
-    }]);
-
-    if (error) {
-      showError('Erro ao salvar registro.');
-      return;
-    }
-
-    showSuccess('Registro de vendas salvo com sucesso!');
-    resetForm();
-    loadData();
   };
 
   const resetForm = () => {
@@ -129,23 +145,61 @@ const RegistroVendas = () => {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 10);
 
-  const estatisticasHoje = () => {
-    const hoje = new Date().toISOString().split('T')[0];
-    const registrosHoje = registros.filter(r => r.data === hoje);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (submitting) return;
+    if (!userId) {
+      showError('Usuário não identificado');
+      return;
+    }
+    if (!formData.vendedorId || !formData.data || formData.atendimentos < 0 || formData.vendas < 0) {
+      showError('Preencha todos os campos corretamente');
+      return;
+    }
+    if (formData.vendas > formData.atendimentos) {
+      showError('O número de vendas não pode ser maior que o número de atendimentos');
+      return;
+    }
 
-    const totalAtendimentos = registrosHoje.reduce((sum, r) => sum + r.atendimentos, 0);
-    const totalVendas = registrosHoje.reduce((sum, r) => sum + r.vendas, 0);
-    const conversaoMedia = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
+    const vendedor = vendedores.find(v => v.id === formData.vendedorId);
+    if (!vendedor) {
+      showError('Vendedor não encontrado');
+      return;
+    }
 
-    return {
-      totalAtendimentos,
-      totalVendas,
-      conversaoMedia,
-      registros: registrosHoje.length
-    };
+    const conversao = formData.atendimentos > 0 ? (formData.vendas / formData.atendimentos) * 100 : 0;
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        user_id: userId,
+        vendedorId: formData.vendedorId,
+        lojaId: vendedor.lojaId,
+        data: formData.data,
+        atendimentos: formData.atendimentos,
+        vendas: formData.vendas,
+        conversao,
+      };
+
+      const { data: inserted, error } = await supabase
+        .from('registro_vendas')
+        .insert([payload]);
+
+      console.log('[DEBUG] insert registro_vendas:', { inserted, error, payload });
+
+      if (error) {
+        console.error('Erro ao salvar registro:', error);
+        showError(error.message || 'Erro ao salvar registro.');
+        return;
+      }
+
+      showSuccess('Registro de vendas salvo com sucesso!');
+      resetForm();
+      await loadData(userId);
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const stats = estatisticasHoje();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
@@ -155,6 +209,7 @@ const RegistroVendas = () => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Registrar Vendas</h1>
           <p className="text-gray-600 mt-2">Registre os atendimentos e vendas dos vendedores</p>
         </div>
+
         {/* Estatísticas do Dia */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
@@ -194,6 +249,7 @@ const RegistroVendas = () => {
             </CardContent>
           </Card>
         </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Formulário de Registro */}
           <Card>
@@ -221,9 +277,13 @@ const RegistroVendas = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div>
                   <Label htmlFor="vendedorId">Vendedor *</Label>
-                  <Select value={formData.vendedorId} onValueChange={(value) => setFormData({...formData, vendedorId: value})}>
+                  <Select
+                    value={formData.vendedorId}
+                    onValueChange={(value) => setFormData({ ...formData, vendedorId: value })}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione um vendedor" />
                     </SelectTrigger>
@@ -236,15 +296,17 @@ const RegistroVendas = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div>
                   <Label htmlFor="data">Data *</Label>
                   <Input
                     id="data"
                     type="date"
                     value={formData.data}
-                    onChange={(e) => setFormData({...formData, data: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, data: e.target.value })}
                   />
                 </div>
+
                 <div>
                   <Label htmlFor="atendimentos">Número de Atendimentos *</Label>
                   <Input
@@ -252,10 +314,11 @@ const RegistroVendas = () => {
                     type="number"
                     min="0"
                     value={formData.atendimentos}
-                    onChange={(e) => setFormData({...formData, atendimentos: Number(e.target.value)})}
+                    onChange={(e) => setFormData({ ...formData, atendimentos: Number(e.target.value) })}
                     placeholder="Ex: 10"
                   />
                 </div>
+
                 <div>
                   <Label htmlFor="vendas">Número de Vendas *</Label>
                   <Input
@@ -264,10 +327,11 @@ const RegistroVendas = () => {
                     min="0"
                     max={formData.atendimentos}
                     value={formData.vendas}
-                    onChange={(e) => setFormData({...formData, vendas: Number(e.target.value)})}
+                    onChange={(e) => setFormData({ ...formData, vendas: Number(e.target.value) })}
                     placeholder="Ex: 3"
                   />
                 </div>
+
                 {formData.atendimentos > 0 && (
                   <div className="p-4 bg-blue-50 rounded-lg">
                     <div className="text-sm text-blue-600 font-medium">
@@ -275,17 +339,19 @@ const RegistroVendas = () => {
                     </div>
                   </div>
                 )}
+
                 <div className="flex justify-end space-x-2">
                   <Button type="button" variant="outline" onClick={resetForm}>
                     Limpar
                   </Button>
-                  <Button type="submit">
-                    Registrar Vendas
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? 'Registrando...' : 'Registrar Vendas'}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
+
           {/* Registros Recentes */}
           <Card>
             <CardHeader>
@@ -331,7 +397,8 @@ const RegistroVendas = () => {
             </CardContent>
           </Card>
         </div>
-        {/* Tabela de Todos os Registros */}
+
+        {/* Histórico Completo */}
         {registros.length > 0 && (
           <Card className="mt-8">
             <CardHeader>
@@ -354,26 +421,31 @@ const RegistroVendas = () => {
                     .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
                     .slice(0, 20)
                     .map((registro) => (
-                    <TableRow key={registro.id}>
-                      <TableCell>
-                        {new Date(registro.data).toLocaleDateString('pt-BR')}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {getVendedorNome(registro.vendedorId)}
-                      </TableCell>
-                      <TableCell>{getLojaNome(registro.lojaId)}</TableCell>
-                      <TableCell>{registro.atendimentos}</TableCell>
-                      <TableCell>{registro.vendas}</TableCell>
-                      <TableCell>
-                        <span className={`font-medium ${
-                          registro.conversao >= 25 ? 'text-green-600' : 
-                          registro.conversao >= 15 ? 'text-yellow-600' : 'text-red-600'
-                        }`}>
-                          {registro.conversao?.toFixed(1)}%
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                      <TableRow key={registro.id}>
+                        <TableCell>
+                          {new Date(registro.data).toLocaleDateString('pt-BR')}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {getVendedorNome(registro.vendedorId)}
+                        </TableCell>
+                        <TableCell>{getLojaNome(registro.lojaId)}</TableCell>
+                        <TableCell>{registro.atendimentos}</TableCell>
+                        <TableCell>{registro.vendas}</TableCell>
+                        <TableCell>
+                          <span
+                            className={`font-medium ${
+                              registro.conversao >= 25
+                                ? 'text-green-600'
+                                : registro.conversao >= 15
+                                ? 'text-yellow-600'
+                                : 'text-red-600'
+                            }`}
+                          >
+                            {registro.conversao?.toFixed(1)}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             </CardContent>
