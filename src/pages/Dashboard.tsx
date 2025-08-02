@@ -24,7 +24,6 @@ const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const { user } = useAuth();
 
   useEffect(() => {
     const hoje = new Date();
