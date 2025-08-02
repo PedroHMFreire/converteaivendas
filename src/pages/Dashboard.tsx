@@ -32,6 +32,10 @@ import {
 import { calculateDashboardData, formatPercentage, formatDate } from '@/lib/dashboard-utils';
 import { DashboardData } from '@/types';
 
+// IMPORTAÇÕES PARA PDF
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dataInicio, setDataInicio] = useState('');
@@ -55,6 +59,48 @@ const Dashboard = () => {
 
   const handleFilterChange = () => {
     loadDashboardData(dataInicio, dataFim);
+  };
+
+  // --- FUNÇÃO PARA EXPORTAR PDF ---
+  const handleExportPDF = () => {
+    if (!dashboardData) return;
+
+    const doc = new jsPDF();
+
+    // Branding/Logo (opcional: se quiser imagem, só avisar)
+    doc.setFontSize(22);
+    doc.setTextColor(33, 150, 243); // azul Convertê
+    doc.text('Relatório de Conversão - Convertê', 14, 18);
+
+    doc.setDrawColor(33, 150, 243);
+    doc.line(14, 21, 196, 21);
+
+    doc.setFontSize(12);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Exportado em: ${new Date().toLocaleDateString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 36,
+      theme: 'striped',
+      head: [['Métrica', 'Valor']],
+      body: [
+        ['Conversão Geral', formatPercentage(dashboardData.conversaoGeral)],
+        ['Total de Atendimentos', dashboardData.totalAtendimentos.toLocaleString()],
+        ['Total de Vendas', dashboardData.totalVendas.toLocaleString()],
+        ['Melhor Vendedor', dashboardData.melhorVendedor],
+        [`Período`, `${dataInicio} a ${dataFim}`]
+      ],
+      headStyles: { fillColor: [33, 150, 243], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [240, 245, 255] },
+      styles: { fontSize: 12, textColor: [33, 37, 41] }
+    });
+
+    // Assinatura do sistema
+    doc.setFontSize(10);
+    doc.setTextColor(160, 160, 160);
+    doc.text('Sistema Convertê - Relatório gerado automaticamente', 14, doc.internal.pageSize.getHeight() - 10);
+
+    doc.save('relatorio-dashboard.pdf');
   };
 
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -114,10 +160,14 @@ const Dashboard = () => {
                     className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
                   />
                 </div>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600">
+                <Button className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600" onClick={handleFilterChange}>
                   Aplicar Filtros
                 </Button>
-                <Button variant="outline" className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]">
+                <Button
+                  variant="outline"
+                  className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]"
+                  onClick={handleExportPDF}
+                >
                   <Download className="w-4 h-4 mr-2" />
                   Exportar
                 </Button>
