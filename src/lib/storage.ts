@@ -3,18 +3,30 @@ import { Loja, Vendedor, RegistroVenda } from '@/types';
 const STORAGE_KEYS = {
   LOJAS: 'converte_lojas',
   VENDEDORES: 'converte_vendedores',
-  REGISTROS: 'converte_registros'
+  REGISTROS: 'converte_registros',
+  USER: 'converte_user' // (opcional, para facilitar leitura do usuário)
 };
+
+// Função para obter o ID único do usuário logado
+function getCurrentUserId(): string {
+  // Adapte para o seu sistema!
+  // Se salva usuário no localStorage ao logar:
+  const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || '{}');
+  // Tente usar id, se não tiver, use email (NÃO use nome)
+  return user?.id || user?.email || '';
+}
 
 export const storage = {
   // Lojas
   getLojas: (): Loja[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.LOJAS);
+    const userId = getCurrentUserId();
+    const data = localStorage.getItem(`${STORAGE_KEYS.LOJAS}_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   setLojas: (lojas: Loja[]) => {
-    localStorage.setItem(STORAGE_KEYS.LOJAS, JSON.stringify(lojas));
+    const userId = getCurrentUserId();
+    localStorage.setItem(`${STORAGE_KEYS.LOJAS}_${userId}`, JSON.stringify(lojas));
   },
 
   addLoja: (loja: Loja) => {
@@ -25,12 +37,14 @@ export const storage = {
 
   // Vendedores
   getVendedores: (): Vendedor[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.VENDEDORES);
+    const userId = getCurrentUserId();
+    const data = localStorage.getItem(`${STORAGE_KEYS.VENDEDORES}_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   setVendedores: (vendedores: Vendedor[]) => {
-    localStorage.setItem(STORAGE_KEYS.VENDEDORES, JSON.stringify(vendedores));
+    const userId = getCurrentUserId();
+    localStorage.setItem(`${STORAGE_KEYS.VENDEDORES}_${userId}`, JSON.stringify(vendedores));
   },
 
   addVendedor: (vendedor: Vendedor) => {
@@ -45,12 +59,14 @@ export const storage = {
 
   // Registros
   getRegistros: (): RegistroVenda[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.REGISTROS);
+    const userId = getCurrentUserId();
+    const data = localStorage.getItem(`${STORAGE_KEYS.REGISTROS}_${userId}`);
     return data ? JSON.parse(data) : [];
   },
 
   setRegistros: (registros: RegistroVenda[]) => {
-    localStorage.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros));
+    const userId = getCurrentUserId();
+    localStorage.setItem(`${STORAGE_KEYS.REGISTROS}_${userId}`, JSON.stringify(registros));
   },
 
   addRegistro: (registro: RegistroVenda) => {
@@ -73,3 +89,8 @@ export const storage = {
     return storage.getRegistros().filter(r => r.lojaId === lojaId);
   }
 };
+
+// **Dica extra:**  
+// Certifique-se que, ao fazer login, salve o objeto do usuário em localStorage:
+// Exemplo: localStorage.setItem('converte_user', JSON.stringify({ id, email, ... }))
+// E, ao deslogar, limpe com localStorage.removeItem('converte_user');
