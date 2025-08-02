@@ -17,7 +17,6 @@ import { DashboardData } from '@/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/hooks/useAuth';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
