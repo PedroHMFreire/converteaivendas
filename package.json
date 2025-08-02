@@ -16,7 +16,7 @@
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
     "pre-deploy": "pnpm run lint && pnpm run type-check",
-    "postinstall": "pnpm run type-check"
+    "prepare": ""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
