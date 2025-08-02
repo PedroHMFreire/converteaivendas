@@ -13,20 +13,41 @@ const AuthGuard = ({ children }: AuthGuardProps) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const currentUser = authService.getCurrentUser();
-    
-    if (!currentUser) {
-      navigate('/login');
-      return;
-    }
+    let active = true;
 
-    if (!currentUser.ativo || authService.isTrialExpired()) {
-      navigate('/upgrade');
-      return;
-    }
+    const checkAuth = async () => {
+      const currentUser = authService.getCurrentUser();
 
-    setUser(currentUser);
-    setIsLoading(false);
+      if (!currentUser) {
+        // Não autenticado
+        navigate('/login');
+        return;
+      }
+
+      try {
+        const trialExpired = await authService.isTrialExpired();
+
+        if (!currentUser.ativo || trialExpired) {
+          navigate('/upgrade');
+          return;
+        }
+
+        if (active) {
+          setUser(currentUser);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        // Em caso de erro na verificação, derruba para login (ou ajustar conforme lógica desejada)
+        console.error('Erro ao validar usuário:', err);
+        navigate('/login');
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      active = false;
+    };
   }, [navigate]);
 
   if (isLoading) {
