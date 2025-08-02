@@ -1,10 +1,13 @@
-import { storage } from './storage';
+// src/lib/dashboard-utils.ts
+
+import { supabase } from './supabaseClient';
 import { DashboardData, Loja, Vendedor, RegistroVenda } from '@/types';
 
-export const calculateDashboardData = (
+export const calculateDashboardData = async (
+  userId: string,
   dataInicio?: string,
   dataFim?: string
-): DashboardData => {
+): Promise<DashboardData> => {
   const hoje = new Date().toISOString().split('T')[0];
   const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     .toISOString().split('T')[0];
@@ -12,19 +15,33 @@ export const calculateDashboardData = (
   const inicio = dataInicio || inicioMes;
   const fim = dataFim || hoje;
 
-  const registros = storage.getRegistrosByPeriodo(inicio, fim);
-  const lojas = storage.getLojas();
-  const vendedores = storage.getVendedores();
+  // Buscando registros do período e do usuário
+  const { data: registros = [] } = await supabase
+    .from('registro_vendas')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('data', inicio)
+    .lte('data', fim);
 
-  const totalAtendimentos = registros.reduce((sum, r) => sum + r.atendimentos, 0);
-  const totalVendas = registros.reduce((sum, r) => sum + r.vendas, 0);
+  const { data: lojas = [] } = await supabase
+    .from('lojas')
+    .select('*')
+    .eq('user_id', userId);
+
+  const { data: vendedores = [] } = await supabase
+    .from('vendedores')
+    .select('*')
+    .eq('user_id', userId);
+
+  const totalAtendimentos = registros.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
+  const totalVendas = registros.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
   const conversaoGeral = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
 
   // Conversão por vendedor
-  const vendedorStats = vendedores.map(vendedor => {
-    const registrosVendedor = registros.filter(r => r.vendedorId === vendedor.id);
-    const atendimentos = registrosVendedor.reduce((sum, r) => sum + r.atendimentos, 0);
-    const vendas = registrosVendedor.reduce((sum, r) => sum + r.vendas, 0);
+  const vendedorStats = vendedores.map((vendedor: Vendedor) => {
+    const registrosVendedor = registros.filter((r: RegistroVenda) => r.vendedorId === vendedor.id);
+    const atendimentos = registrosVendedor.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
+    const vendas = registrosVendedor.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
     const conversao = atendimentos > 0 ? (vendas / atendimentos) * 100 : 0;
 
     return {
@@ -36,10 +53,10 @@ export const calculateDashboardData = (
   });
 
   // Conversão por loja
-  const lojaStats = lojas.map(loja => {
-    const registrosLoja = registros.filter(r => r.lojaId === loja.id);
-    const atendimentos = registrosLoja.reduce((sum, r) => sum + r.atendimentos, 0);
-    const vendas = registrosLoja.reduce((sum, r) => sum + r.vendas, 0);
+  const lojaStats = lojas.map((loja: Loja) => {
+    const registrosLoja = registros.filter((r: RegistroVenda) => r.lojaId === loja.id);
+    const atendimentos = registrosLoja.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
+    const vendas = registrosLoja.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
     const conversao = atendimentos > 0 ? (vendas / atendimentos) * 100 : 0;
 
     return {
@@ -51,11 +68,11 @@ export const calculateDashboardData = (
   });
 
   // Conversão por dia
-  const diasUnicos = [...new Set(registros.map(r => r.data))].sort();
+  const diasUnicos = [...new Set(registros.map((r: RegistroVenda) => r.data))].sort();
   const conversaoPorDia = diasUnicos.map(data => {
-    const registrosDia = registros.filter(r => r.data === data);
-    const atendimentos = registrosDia.reduce((sum, r) => sum + r.atendimentos, 0);
-    const vendas = registrosDia.reduce((sum, r) => sum + r.vendas, 0);
+    const registrosDia = registros.filter((r: RegistroVenda) => r.data === data);
+    const atendimentos = registrosDia.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
+    const vendas = registrosDia.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
     const conversao = atendimentos > 0 ? (vendas / atendimentos) * 100 : 0;
 
     return {
@@ -91,6 +108,7 @@ export const calculateDashboardData = (
   };
 };
 
+// Mesmas funções utilitárias (podem manter)
 export const formatPercentage = (value: number): string => {
   return `${value.toFixed(1)}%`;
 };
