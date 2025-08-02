@@ -3,6 +3,9 @@
 import { supabase } from './supabaseClient';
 import { DashboardData, Loja, Vendedor, RegistroVenda } from '@/types';
 
+/**
+ * Calcula os dados do dashboard: conversão geral, por vendedor, por loja, etc.
+ */
 export const calculateDashboardData = async (
   userId: string,
   dataInicio?: string,
@@ -10,28 +13,36 @@ export const calculateDashboardData = async (
 ): Promise<DashboardData> => {
   const hoje = new Date().toISOString().split('T')[0];
   const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    .toISOString().split('T')[0];
+    .toISOString()
+    .split('T')[0];
 
   const inicio = dataInicio || inicioMes;
   const fim = dataFim || hoje;
 
-  // Buscando registros do período e do usuário
-  const { data: registros = [] } = await supabase
+  // Buscar registros do período
+  const { data: registrosRaw = [] } = await supabase
     .from('registro_vendas')
     .select('*')
     .eq('user_id', userId)
     .gte('data', inicio)
     .lte('data', fim);
 
-  const { data: lojas = [] } = await supabase
+  // Garantir que registros seja array válido
+  const registros: RegistroVenda[] = Array.isArray(registrosRaw) ? (registrosRaw as any[]) : [];
+
+  // Buscar lojas e vendedores
+  const { data: lojasRaw = [] } = await supabase
     .from('lojas')
     .select('*')
     .eq('user_id', userId);
 
-  const { data: vendedores = [] } = await supabase
+  const { data: vendedoresRaw = [] } = await supabase
     .from('vendedores')
     .select('*')
     .eq('user_id', userId);
+
+  const lojas: Loja[] = Array.isArray(lojasRaw) ? (lojasRaw as any[]) : [];
+  const vendedores: Vendedor[] = Array.isArray(vendedoresRaw) ? (vendedoresRaw as any[]) : [];
 
   const totalAtendimentos = registros.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
   const totalVendas = registros.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
@@ -48,7 +59,7 @@ export const calculateDashboardData = async (
       vendedor: vendedor.nome,
       conversao,
       atendimentos,
-      vendas
+      vendas,
     };
   });
 
@@ -63,13 +74,13 @@ export const calculateDashboardData = async (
       loja: loja.nome,
       conversao,
       atendimentos,
-      vendas
+      vendas,
     };
   });
 
   // Conversão por dia
   const diasUnicos = [...new Set(registros.map((r: RegistroVenda) => r.data))].sort();
-  const conversaoPorDia = diasUnicos.map(data => {
+  const conversaoPorDia = diasUnicos.map((data) => {
     const registrosDia = registros.filter((r: RegistroVenda) => r.data === data);
     const atendimentos = registrosDia.reduce((sum: number, r: RegistroVenda) => sum + (r.atendimentos || 0), 0);
     const vendas = registrosDia.reduce((sum: number, r: RegistroVenda) => sum + (r.vendas || 0), 0);
@@ -79,40 +90,40 @@ export const calculateDashboardData = async (
       data,
       conversao,
       atendimentos,
-      vendas
+      vendas,
     };
   });
 
-  // Corrigir o erro de reduce em arrays vazios
-  const melhorVendedor = vendedorStats.length > 0 
-    ? vendedorStats.reduce((prev, current) => 
-        prev.conversao > current.conversao ? prev : current
-      ).vendedor 
-    : 'N/A';
+  const melhorVendedor =
+    vendedorStats.length > 0
+      ? vendedorStats.reduce((prev, current) => (prev.conversao > current.conversao ? prev : current)).vendedor
+      : 'N/A';
 
-  const melhorLoja = lojaStats.length > 0 
-    ? lojaStats.reduce((prev, current) => 
-        prev.conversao > current.conversao ? prev : current
-      ).loja 
-    : 'N/A';
+  const melhorLoja =
+    lojaStats.length > 0
+      ? lojaStats.reduce((prev, current) => (prev.conversao > current.conversao ? prev : current)).loja
+      : 'N/A';
 
   return {
+    conversaoGeral,
     totalAtendimentos,
     totalVendas,
-    conversaoGeral,
     melhorVendedor,
     melhorLoja,
     conversaoPorDia,
     conversaoPorVendedor: vendedorStats.sort((a, b) => b.conversao - a.conversao),
-    conversaoPorLoja: lojaStats.sort((a, b) => b.conversao - a.conversao)
+    conversaoPorLoja: lojaStats.sort((a, b) => b.conversao - a.conversao),
   };
 };
 
-// Mesmas funções utilitárias (podem manter)
+// Mesmas funções utilitárias (corrigidas)
 export const formatPercentage = (value: number): string => {
   return `${value.toFixed(1)}%`;
 };
 
 export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleDateString('pt-BR');
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return dateString;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
