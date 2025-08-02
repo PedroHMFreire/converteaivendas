@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { 
-  BarChart3, 
-  Store, 
-  Users, 
-  PlusCircle, 
+import {
+  BarChart3,
+  Store,
+  Users,
+  PlusCircle,
   Menu,
   User,
   LogOut,
-  Settings
+  Settings,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authService } from '@/lib/auth';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -20,12 +22,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useTheme } from 'next-themes'; // IMPORTANTE
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const user = authService.getCurrentUser();
+  const { theme, setTheme } = useTheme(); // PARA TROCA DE TEMA
 
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -45,8 +49,22 @@ const Header = () => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
+  // BOTÃO DE TEMA
+  const ThemeToggleButton = () => (
+    <button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="p-2 rounded-full border hover:bg-gray-200 dark:hover:bg-gray-800 transition"
+      title={`Alternar para tema ${theme === "dark" ? "claro" : "escuro"}`}
+      style={{ marginRight: 4 }} // Deixa coladinho do avatar
+    >
+      {theme === "dark"
+        ? <Sun className="w-5 h-5 text-yellow-500" />
+        : <Moon className="w-5 h-5 text-gray-600" />}
+    </button>
+  );
+
   return (
-    <header className="bg-white shadow-sm border-b">
+    <header className="bg-white shadow-sm border-b dark:bg-gray-900 dark:border-gray-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -58,7 +76,7 @@ const Header = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <BarChart3 className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-gray-900">Convertê</span>
+              <span className="text-xl font-bold text-gray-900 dark:text-white">Convertê</span>
             </button>
           </div>
 
@@ -72,8 +90,8 @@ const Header = () => {
                   onClick={() => navigate(item.path)}
                   className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive(item.path)
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -83,8 +101,9 @@ const Header = () => {
             })}
           </nav>
 
-          {/* User Menu */}
-          <div className="flex items-center space-x-4">
+          {/* User Menu + Tema */}
+          <div className="flex items-center space-x-2">
+            <ThemeToggleButton /> {/* BOTÃO DE TEMA */}
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -152,8 +171,8 @@ const Header = () => {
                     }}
                     className={`flex items-center space-x-2 w-full px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive(item.path)
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-100'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
