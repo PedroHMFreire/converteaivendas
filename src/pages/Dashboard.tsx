@@ -62,7 +62,7 @@ const Dashboard = () => {
   if (!dashboardData) {
     return (
       <AuthGuard>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
           <Header />
           <div className="flex items-center justify-center h-96">
             <div className="text-center">
