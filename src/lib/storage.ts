@@ -1,96 +1,152 @@
-import { Loja, Vendedor, RegistroVenda } from '@/types';
+// src/lib/storage.ts
 
-const STORAGE_KEYS = {
-  LOJAS: 'converte_lojas',
-  VENDEDORES: 'converte_vendedores',
-  REGISTROS: 'converte_registros',
-  USER: 'converte_user' // (opcional, para facilitar leitura do usuário)
-};
+import { supabase } from "@/lib/supabaseClient";
+import { Loja, Vendedor, RegistroVenda } from "@/types";
 
-// Função para obter o ID único do usuário logado
-function getCurrentUserId(): string {
-  // Adapte para o seu sistema!
-  // Se salva usuário no localStorage ao logar:
-  const user = JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || '{}');
-  // Tente usar id, se não tiver, use email (NÃO use nome)
-  return user?.id || user?.email || '';
-}
+/*
+  Todas as funções agora exigem o userId do usuário autenticado.
+  Exemplo de uso:
+    const user = supabase.auth.getUser();
+    const userId = user?.id;
+    await storage.getLojas(userId);
+*/
 
 export const storage = {
   // Lojas
-  getLojas: (): Loja[] => {
-    const userId = getCurrentUserId();
-    const data = localStorage.getItem(`${STORAGE_KEYS.LOJAS}_${userId}`);
-    return data ? JSON.parse(data) : [];
+  getLojas: async (userId: string): Promise<Loja[]> => {
+    const { data, error } = await supabase
+      .from("lojas")
+      .select("*")
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar lojas:", error);
+      return [];
+    }
+    return data || [];
   },
 
-  setLojas: (lojas: Loja[]) => {
-    const userId = getCurrentUserId();
-    localStorage.setItem(`${STORAGE_KEYS.LOJAS}_${userId}`, JSON.stringify(lojas));
+  addLoja: async (loja: Loja, userId: string) => {
+    const { error } = await supabase
+      .from("lojas")
+      .insert([{ ...loja, user_id: userId }]);
+    if (error) console.error("Erro ao adicionar loja:", error);
   },
 
-  addLoja: (loja: Loja) => {
-    const lojas = storage.getLojas();
-    lojas.push(loja);
-    storage.setLojas(lojas);
+  setLojas: async (lojas: Loja[], userId: string) => {
+    // (não recomendado sobrescrever todas, mas para compatibilidade)
+    await supabase.from("lojas").delete().eq("user_id", userId);
+    if (lojas.length > 0) {
+      const data = lojas.map((loja) => ({ ...loja, user_id: userId }));
+      await supabase.from("lojas").insert(data);
+    }
   },
 
   // Vendedores
-  getVendedores: (): Vendedor[] => {
-    const userId = getCurrentUserId();
-    const data = localStorage.getItem(`${STORAGE_KEYS.VENDEDORES}_${userId}`);
-    return data ? JSON.parse(data) : [];
+  getVendedores: async (userId: string): Promise<Vendedor[]> => {
+    const { data, error } = await supabase
+      .from("vendedores")
+      .select("*")
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar vendedores:", error);
+      return [];
+    }
+    return data || [];
   },
 
-  setVendedores: (vendedores: Vendedor[]) => {
-    const userId = getCurrentUserId();
-    localStorage.setItem(`${STORAGE_KEYS.VENDEDORES}_${userId}`, JSON.stringify(vendedores));
+  addVendedor: async (vendedor: Vendedor, userId: string) => {
+    const { error } = await supabase
+      .from("vendedores")
+      .insert([{ ...vendedor, user_id: userId }]);
+    if (error) console.error("Erro ao adicionar vendedor:", error);
   },
 
-  addVendedor: (vendedor: Vendedor) => {
-    const vendedores = storage.getVendedores();
-    vendedores.push(vendedor);
-    storage.setVendedores(vendedores);
+  setVendedores: async (vendedores: Vendedor[], userId: string) => {
+    await supabase.from("vendedores").delete().eq("user_id", userId);
+    if (vendedores.length > 0) {
+      const data = vendedores.map((v) => ({ ...v, user_id: userId }));
+      await supabase.from("vendedores").insert(data);
+    }
   },
 
-  getVendedoresByLoja: (lojaId: string): Vendedor[] => {
-    return storage.getVendedores().filter(v => v.lojaId === lojaId);
+  getVendedoresByLoja: async (lojaId: string, userId: string): Promise<Vendedor[]> => {
+    const { data, error } = await supabase
+      .from("vendedores")
+      .select("*")
+      .eq("lojaId", lojaId)
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar vendedores por loja:", error);
+      return [];
+    }
+    return data || [];
   },
 
   // Registros
-  getRegistros: (): RegistroVenda[] => {
-    const userId = getCurrentUserId();
-    const data = localStorage.getItem(`${STORAGE_KEYS.REGISTROS}_${userId}`);
-    return data ? JSON.parse(data) : [];
+  getRegistros: async (userId: string): Promise<RegistroVenda[]> => {
+    const { data, error } = await supabase
+      .from("registros")
+      .select("*")
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar registros:", error);
+      return [];
+    }
+    return data || [];
   },
 
-  setRegistros: (registros: RegistroVenda[]) => {
-    const userId = getCurrentUserId();
-    localStorage.setItem(`${STORAGE_KEYS.REGISTROS}_${userId}`, JSON.stringify(registros));
+  addRegistro: async (registro: RegistroVenda, userId: string) => {
+    const { error } = await supabase
+      .from("registros")
+      .insert([{ ...registro, user_id: userId }]);
+    if (error) console.error("Erro ao adicionar registro:", error);
   },
 
-  addRegistro: (registro: RegistroVenda) => {
-    const registros = storage.getRegistros();
-    registros.push(registro);
-    storage.setRegistros(registros);
+  setRegistros: async (registros: RegistroVenda[], userId: string) => {
+    await supabase.from("registros").delete().eq("user_id", userId);
+    if (registros.length > 0) {
+      const data = registros.map((r) => ({ ...r, user_id: userId }));
+      await supabase.from("registros").insert(data);
+    }
   },
 
-  getRegistrosByPeriodo: (dataInicio: string, dataFim: string): RegistroVenda[] => {
-    return storage.getRegistros().filter(r => 
-      r.data >= dataInicio && r.data <= dataFim
-    );
+  getRegistrosByPeriodo: async (dataInicio: string, dataFim: string, userId: string): Promise<RegistroVenda[]> => {
+    const { data, error } = await supabase
+      .from("registros")
+      .select("*")
+      .gte("data", dataInicio)
+      .lte("data", dataFim)
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar registros por período:", error);
+      return [];
+    }
+    return data || [];
   },
 
-  getRegistrosByVendedor: (vendedorId: string): RegistroVenda[] => {
-    return storage.getRegistros().filter(r => r.vendedorId === vendedorId);
+  getRegistrosByVendedor: async (vendedorId: string, userId: string): Promise<RegistroVenda[]> => {
+    const { data, error } = await supabase
+      .from("registros")
+      .select("*")
+      .eq("vendedorId", vendedorId)
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar registros por vendedor:", error);
+      return [];
+    }
+    return data || [];
   },
 
-  getRegistrosByLoja: (lojaId: string): RegistroVenda[] => {
-    return storage.getRegistros().filter(r => r.lojaId === lojaId);
-  }
+  getRegistrosByLoja: async (lojaId: string, userId: string): Promise<RegistroVenda[]> => {
+    const { data, error } = await supabase
+      .from("registros")
+      .select("*")
+      .eq("lojaId", lojaId)
+      .eq("user_id", userId);
+    if (error) {
+      console.error("Erro ao buscar registros por loja:", error);
+      return [];
+    }
+    return data || [];
+  },
 };
-
-// **Dica extra:**  
-// Certifique-se que, ao fazer login, salve o objeto do usuário em localStorage:
-// Exemplo: localStorage.setItem('converte_user', JSON.stringify({ id, email, ... }))
-// E, ao deslogar, limpe com localStorage.removeItem('converte_user');
