@@ -10,11 +10,12 @@ import { Plus, TrendingUp, Calendar, Users, Target } from 'lucide-react';
 import { Vendedor, Loja, RegistroVenda } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/hooks/useAuth';
 
 const RegistroVendas = () => {
-  const { user } = useAuth();
-  const userId = user?.id;
+import { authService } from '@/lib/auth';
+// ...
+const user = authService.getCurrentUser();
+const userId = user?.id;
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
