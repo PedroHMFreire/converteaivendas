@@ -7,17 +7,26 @@ import MetricCard from '@/components/MetricCard';
 import Header from '@/components/Header';
 import TrialBanner from '@/components/TrialBanner';
 import AuthGuard from '@/components/AuthGuard';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import { TrendingUp, Users, Store, Target, Calendar, Download } from 'lucide-react';
 import { formatPercentage, formatDate } from '@/lib/dashboard-utils';
 import { DashboardData } from '@/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { supabase } from '@/lib/supabaseClient';
-import { authService } from '@/lib/auth'; // <--- Aqui!
+import { authService } from '@/lib/auth';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -26,44 +35,49 @@ const Dashboard = () => {
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const user = authService.getCurrentUser();
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const hoje = new Date();
-    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    setDataInicio(inicioMes.toISOString().split('T')[0]);
-    setDataFim(hoje.toISOString().split('T')[0]);
-    if (user) {
-      loadDashboardData(inicioMes.toISOString().split('T')[0], hoje.toISOString().split('T')[0]);
-    }
-  // eslint-disable-next-line
-  }, []); // Não dependa de user, para evitar loop infinito
+    const init = async () => {
+      const currentUser = await authService.getCurrentUser();
+      if (!currentUser) return;
+      setUserId(currentUser.id);
 
-  const loadDashboardData = async (inicio?: string, fim?: string) => {
-    if (!user) return;
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const isoInicio = inicioMes.toISOString().split('T')[0];
+      const isoFim = hoje.toISOString().split('T')[0];
+      setDataInicio(isoInicio);
+      setDataFim(isoFim);
+
+      await loadDashboardData(isoInicio, isoFim, currentUser.id);
+    };
+
+    init();
+    // eslint-disable-next-line
+  }, []);
+
+  const loadDashboardData = async (inicio?: string, fim?: string, uId?: string) => {
+    if (!uId) return;
     setLoading(true);
     try {
-      // Adapte aqui: busque os dados que pertencem a esse usuário pelo user.id
-      // Exemplo básico com Supabase: você provavelmente terá que montar sua própria consulta ou usar um endpoint pronto
-      // Exemplo fictício: 
-      // const { data, error } = await supabase.rpc('calculate_dashboard_data', { user_id: user.id, inicio, fim });
-      // if (!error && data) setDashboardData(data);
-
-      // --- OU, mais simples, se você ainda usa a função local enquanto não tem RPC no Supabase ---
-      // const data = calculateDashboardData(inicio, fim, user.id); // passe o user.id!
-      // setDashboardData(data);
-
-      // Enquanto você não tem função RPC pronta no Supabase, coloque um placeholder:
-      setDashboardData(null); // Deixe vazio pra não quebrar (remova isso depois!)
-
+      const { calculateDashboardData } = await import('@/lib/dashboard-utils');
+      const data = await calculateDashboardData(uId, inicio, fim);
+      setDashboardData(data);
+    } catch (err) {
+      console.error('Erro carregando dashboard:', err);
+      setDashboardData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFilterChange = () => {
-    loadDashboardData(dataInicio, dataFim);
+  const handleFilterChange = async () => {
+    if (!userId) return;
+    if (dataInicio > dataFim) {
+      return; // poderia mostrar toast se quiser
+    }
+    await loadDashboardData(dataInicio, dataFim, userId);
   };
 
   const handleExportPDF = () => {
@@ -87,11 +101,12 @@ const Dashboard = () => {
         ['Total de Atendimentos', dashboardData.totalAtendimentos.toLocaleString()],
         ['Total de Vendas', dashboardData.totalVendas.toLocaleString()],
         ['Melhor Vendedor', dashboardData.melhorVendedor],
-        [`Período`, `${dataInicio} a ${dataFim}`]
+        ['Melhor Loja', dashboardData.melhorLoja],
+        ['Período', `${dataInicio} a ${dataFim}`],
       ],
       headStyles: { fillColor: [33, 150, 243], textColor: [255, 255, 255] },
       alternateRowStyles: { fillColor: [240, 245, 255] },
-      styles: { fontSize: 12, textColor: [33, 37, 41] }
+      styles: { fontSize: 12, textColor: [33, 37, 41] },
     });
 
     doc.setFontSize(10);
@@ -100,22 +115,8 @@ const Dashboard = () => {
     doc.save('relatorio-dashboard.pdf');
   };
 
-  if (!user) {
-    return (
-      <AuthGuard>
-        <div className="min-h-screen bg-gray-50 dark:bg-[#101624] flex items-center justify-center">
-          <Header />
-          <div className="text-center mt-32">
-            <p className="text-gray-600 dark:text-[#A0AEC0]">
-              Você precisa estar logado para acessar o dashboard.
-            </p>
-          </div>
-        </div>
-      </AuthGuard>
-    );
-  }
-
-  if (loading || !dashboardData) {
+  // se ainda não carregou userId, mostra carregando
+  if (!userId || loading) {
     return (
       <AuthGuard>
         <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
@@ -147,7 +148,9 @@ const Dashboard = () => {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div>
-                  <Label htmlFor="dataInicio" className="text-gray-700 dark:text-[#A0AEC0]">Data Início</Label>
+                  <Label htmlFor="dataInicio" className="text-gray-700 dark:text-[#A0AEC0]">
+                    Data Início
+                  </Label>
                   <Input
                     id="dataInicio"
                     type="date"
@@ -157,7 +160,9 @@ const Dashboard = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="dataFim" className="text-gray-700 dark:text-[#A0AEC0]">Data Fim</Label>
+                  <Label htmlFor="dataFim" className="text-gray-700 dark:text-[#A0AEC0]">
+                    Data Fim
+                  </Label>
                   <Input
                     id="dataFim"
                     type="date"
@@ -166,13 +171,18 @@ const Dashboard = () => {
                     className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
                   />
                 </div>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600" onClick={handleFilterChange}>
+                <Button
+                  className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                  onClick={handleFilterChange}
+                  disabled={loading}
+                >
                   Aplicar Filtros
                 </Button>
                 <Button
                   variant="outline"
                   className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]"
                   onClick={handleExportPDF}
+                  disabled={!dashboardData}
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Exportar
@@ -181,41 +191,50 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Métricas Principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <MetricCard
-              title="Conversão Geral"
-              value={formatPercentage(dashboardData.conversaoGeral)}
-              subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
-              icon={TrendingUp}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
-            />
-            <MetricCard
-              title="Total de Atendimentos"
-              value={dashboardData.totalAtendimentos.toLocaleString()}
-              subtitle="No período selecionado"
-              icon={Users}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
-            <MetricCard
-              title="Total de Vendas"
-              value={dashboardData.totalVendas.toLocaleString()}
-              subtitle="Vendas efetivadas"
-              icon={Target}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
-            <MetricCard
-              title="Melhor Vendedor"
-              value={dashboardData.melhorVendedor}
-              subtitle="Maior conversão do período"
-              icon={Store}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
-          </div>
+          {!dashboardData && !loading && (
+            <div className="text-center py-12">
+              <p className="text-gray-700">Sem dados para o período selecionado.</p>
+            </div>
+          )}
 
-          {/* Gráficos */}
-          {/* ... Aqui permanece igual ... */}
-          {/* Use exatamente o que já estava no Dashboard_antigo para os gráficos e cards */}
+          {dashboardData && (
+            <>
+              {/* Métricas Principais */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <MetricCard
+                  title="Conversão Geral"
+                  value={formatPercentage(dashboardData.conversaoGeral)}
+                  subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
+                  icon={TrendingUp}
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                />
+                <MetricCard
+                  title="Total de Atendimentos"
+                  value={dashboardData.totalAtendimentos.toLocaleString()}
+                  subtitle="No período selecionado"
+                  icon={Users}
+                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
+                />
+                <MetricCard
+                  title="Total de Vendas"
+                  value={dashboardData.totalVendas.toLocaleString()}
+                  subtitle="Vendas efetivadas"
+                  icon={Target}
+                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
+                />
+                <MetricCard
+                  title="Melhor Vendedor"
+                  value={dashboardData.melhorVendedor}
+                  subtitle="Maior conversão do período"
+                  icon={Store}
+                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
+                />
+              </div>
+
+              {/* Gráficos */}
+              {/* ... Aqui você pode reutilizar os gráficos do dashboard antigo com os dados de dashboardData ... */}
+            </>
+          )}
         </div>
       </div>
     </AuthGuard>
