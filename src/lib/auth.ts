@@ -24,6 +24,12 @@ export const authService = {
   // Registrar novo usuário no Supabase Auth
   register: async (registerData: RegisterData): Promise<User> => {
     const { email, senha, nome, empresa, telefone } = registerData;
+
+    // LOGS DE DIAGNÓSTICO
+    console.log('Tentando cadastrar:', email, senha, nome, empresa, telefone);
+    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+    console.log('Supabase KEY:', import.meta.env.VITE_SUPABASE_ANON_KEY);
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password: senha,
@@ -41,6 +47,9 @@ export const authService = {
         }
       }
     });
+
+    // LOG de resposta
+    console.log('RESPOSTA DO SUPABASE:', data, error);
 
     if (error) {
       throw new Error(error.message);
