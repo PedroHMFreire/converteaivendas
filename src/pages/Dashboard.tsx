@@ -17,6 +17,7 @@ import { DashboardData } from '@/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '@/lib/supabaseClient';
+import { authService } from '@/lib/auth';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
@@ -24,6 +25,12 @@ const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
+  const [user, setUser] = useState(authService.getCurrentUser());
+
+  useEffect(() => {
+    // Atualiza o usuário logado, caso altere durante o uso (opcional)
+    setUser(authService.getCurrentUser());
+  }, []);
 
   useEffect(() => {
     const hoje = new Date();
@@ -35,9 +42,8 @@ const Dashboard = () => {
 
   const loadDashboardData = async (inicio?: string, fim?: string) => {
     if (!user) return;
-    // Aqui você deve adaptar o fetch para buscar dados por user_id e período
-    // Exemplo: let data = await fetchDashboardDataFromSupabase(user.id, inicio, fim);
-    // Por ora, vamos usar um placeholder (você deve adaptar conforme seu backend):
+    // Aqui você pode trocar pelo seu fetch customizado se não estiver usando uma função RPC no Supabase
+    // O importante é filtrar pelo user_id do usuário logado!
     const { data, error } = await supabase.rpc('calculate_dashboard_data', { user_id: user.id, inicio, fim });
     if (!error && data) setDashboardData(data);
   };
@@ -102,199 +108,64 @@ const Dashboard = () => {
         <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <TrialBanner />
-          <Card className="mb-8 bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2 text-gray-900 dark:text-[#F3F4F6]">
-                <Calendar className="w-5 h-5" />
-                <span>Filtros de Período</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div>
-                  <Label htmlFor="dataInicio" className="text-gray-700 dark:text-[#A0AEC0]">Data Início</Label>
-                  <Input
-                    id="dataInicio"
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(e.target.value)}
-                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="dataFim" className="text-gray-700 dark:text-[#A0AEC0]">Data Fim</Label>
-                  <Input
-                    id="dataFim"
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => setDataFim(e.target.value)}
-                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                  />
-                </div>
-                <Button className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600" onClick={handleFilterChange}>
-                  Aplicar Filtros
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]"
-                  onClick={handleExportPDF}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Exportar
-                </Button>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+            <div className="flex flex-row gap-4 items-end">
+              <div>
+                <Label htmlFor="dataInicio">Data Inicial</Label>
+                <Input
+                  id="dataInicio"
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                />
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Métricas Principais */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <MetricCard
-              title="Conversão Geral"
-              value={formatPercentage(dashboardData.conversaoGeral)}
-              subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
-              icon={TrendingUp}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
-            />
-            <MetricCard
-              title="Total de Atendimentos"
-              value={dashboardData.totalAtendimentos.toLocaleString()}
-              subtitle="No período selecionado"
-              icon={Users}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
-            <MetricCard
-              title="Total de Vendas"
-              value={dashboardData.totalVendas.toLocaleString()}
-              subtitle="Vendas efetivadas"
-              icon={Target}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
-            <MetricCard
-              title="Melhor Vendedor"
-              value={dashboardData.melhorVendedor}
-              subtitle="Maior conversão do período"
-              icon={Store}
-              className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-            />
+              <div>
+                <Label htmlFor="dataFim">Data Final</Label>
+                <Input
+                  id="dataFim"
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                />
+              </div>
+              <Button className="ml-4 h-10 mt-5" onClick={handleFilterChange}>
+                Filtrar
+              </Button>
+            </div>
+            <Button variant="outline" className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]" onClick={handleExportPDF}>
+              <Download className="w-4 h-4 mr-2" />
+              Exportar Relatório PDF
+            </Button>
           </div>
-
-          {/* Gráficos */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            {/* Conversão por Dia */}
-            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-              <CardHeader>
-                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Conversão por Dia</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={dashboardData.conversaoPorDia}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis 
-                      dataKey="data" 
-                      tickFormatter={(value) => formatDate(value)}
-                      stroke="#64748B"
-                      tick={{ fill: "#A0AEC0" }}
-                    />
-                    <YAxis stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
-                    <Tooltip 
-                      labelFormatter={(value) => formatDate(value)}
-                      formatter={(value: number) => [formatPercentage(value), 'Conversão']}
-                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="conversao" 
-                      stroke="#3B82F6" 
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Conversão por Loja */}
-            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-              <CardHeader>
-                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Conversão por Loja</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={dashboardData.conversaoPorLoja}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                    <XAxis dataKey="loja" stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
-                    <YAxis stroke="#64748B" tick={{ fill: "#A0AEC0" }} />
-                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']}
-                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
-                    />
-                    <Bar dataKey="conversao" fill="#10B981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+          {/* Cards resumo */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <MetricCard icon={<TrendingUp />} title="Conversão Geral" value={formatPercentage(dashboardData.conversaoGeral)} />
+            <MetricCard icon={<Users />} title="Total de Atendimentos" value={dashboardData.totalAtendimentos.toLocaleString()} />
+            <MetricCard icon={<Store />} title="Total de Vendas" value={dashboardData.totalVendas.toLocaleString()} />
+            <MetricCard icon={<Target />} title="Melhor Vendedor" value={dashboardData.melhorVendedor} />
+            <MetricCard icon={<Calendar />} title="Melhor Loja" value={dashboardData.melhorLoja} />
           </div>
-
-          {/* Ranking de Vendedores */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-              <CardHeader>
-                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Ranking de Vendedores</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {dashboardData.conversaoPorVendedor.slice(0, 10).map((vendedor, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-[#222C43] rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
-                          index === 0 ? 'bg-yellow-500' : 
-                          index === 1 ? 'bg-gray-400' : 
-                          index === 2 ? 'bg-orange-500' : 'bg-blue-500'
-                        }`}>
-                          {index + 1}
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900 dark:text-[#F3F4F6]">{vendedor.vendedor}</div>
-                          <div className="text-sm text-gray-500 dark:text-[#A0AEC0]">
-                            {vendedor.vendas} vendas / {vendedor.atendimentos} atendimentos
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                        {formatPercentage(vendedor.conversao)}
-                      </div>
-                    </div>
+          {/* Exemplo de gráfico de conversão por vendedor */}
+          <div className="mb-8">
+            <h3 className="font-semibold text-lg mb-4 text-gray-900 dark:text-gray-100">Conversão por Vendedor</h3>
+            <ResponsiveContainer width="100%" height={340}>
+              <BarChart
+                data={dashboardData.conversaoPorVendedor}
+                layout="vertical"
+                margin={{ top: 8, right: 20, left: 8, bottom: 8 }}
+              >
+                <XAxis type="number" domain={[0, 100]} tick={{ fill: "#A0AEC0" }} />
+                <YAxis type="category" dataKey="vendedor" tick={{ fill: "#A0AEC0" }} width={150} />
+                <Tooltip formatter={(value: number) => value.toFixed(1) + "%"} cursor={{ fill: "#dbeafe" }} />
+                <Bar dataKey="conversao" fill="#3B82F6" radius={[4, 4, 4, 4]}>
+                  {dashboardData.conversaoPorVendedor.map((_, idx) => (
+                    <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                   ))}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-              <CardHeader>
-                <CardTitle className="text-gray-900 dark:text-[#F3F4F6]">Distribuição por Loja</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={dashboardData.conversaoPorLoja}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ loja, conversao }) => `${loja}: ${formatPercentage(conversao)}`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="conversao"
-                    >
-                      {dashboardData.conversaoPorLoja.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => [formatPercentage(value), 'Conversão']}
-                      contentStyle={{ backgroundColor: "#222C43", borderColor: "#27304A", color: "#F3F4F6" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
+          {/* Mais gráficos conforme necessidade */}
         </div>
       </div>
     </AuthGuard>
