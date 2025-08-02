@@ -1,11 +1,25 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Plus, User, Trash2, Edit } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { authService } from '@/lib/auth';
@@ -21,8 +35,15 @@ type Vendedor = {
   user_id: string;
 };
 
+type LojaOption = {
+  id: string;
+  nome: string;
+};
+
 const Vendedores = () => {
+  const navigate = useNavigate();
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
+  const [lojas, setLojas] = useState<LojaOption[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null);
   const [formData, setFormData] = useState({
@@ -44,11 +65,33 @@ const Vendedores = () => {
         return;
       }
       setUserId(currentUser.id);
+      await loadLojasDoUsuario(currentUser.id);
       await loadVendedores(currentUser.id);
     };
     init();
     // eslint-disable-next-line
   }, []);
+
+  const loadLojasDoUsuario = async (uid: string) => {
+    if (!uid) return;
+    try {
+      const { data, error } = await supabase
+        .from('lojas')
+        .select('id, nome')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erro carregando lojas:', error);
+        showError(error.message || 'Erro ao carregar lojas');
+        return;
+      }
+      setLojas(data || []);
+    } catch (err) {
+      console.error('Erro inesperado carregando lojas:', err);
+      showError('Erro ao carregar lojas');
+    }
+  };
 
   const loadVendedores = async (uid: string) => {
     if (!uid) return;
@@ -166,9 +209,7 @@ const Vendedores = () => {
           await loadVendedores(userId);
         }
       } else {
-        const { data, error, status } = await supabase
-          .from('vendedores')
-          .insert([payload]);
+        const { data, error, status } = await supabase.from('vendedores').insert([payload]);
         console.log('[DEBUG] insert vendedor:', { status, data, error, payload });
         if (error) {
           console.error('Erro ao cadastrar vendedor:', error);
@@ -216,15 +257,25 @@ const Vendedores = () => {
                     placeholder="Nome do vendedor"
                   />
                 </div>
+
                 <div>
-                  <Label htmlFor="lojaId">Loja ID *</Label>
-                  <Input
+                  <Label htmlFor="lojaId">Loja *</Label>
+                  <select
                     id="lojaId"
                     value={formData.lojaId}
                     onChange={(e) => setFormData({ ...formData, lojaId: e.target.value })}
-                    placeholder="ID da loja"
-                  />
+                    className="w-full border rounded px-2 py-2 bg-white dark:bg-[#1E2637] text-gray-900 dark:text-[#F3F4F6]"
+                    required
+                  >
+                    <option value="">Selecione uma loja</option>
+                    {lojas.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.nome}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <div>
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -253,6 +304,15 @@ const Vendedores = () => {
                     placeholder="Ex: 10"
                   />
                 </div>
+                {lojas.length === 0 && (
+                  <div className="mb-4 p-3 bg-yellow-100 rounded">
+                    <p className="text-sm">
+                      Você ainda não tem nenhuma loja. Cadastre uma loja antes de adicionar
+                      vendedores.
+                    </p>
+                    <Button onClick={() => navigate('/lojas')}>Cadastrar Loja</Button>
+                  </div>
+                )}
                 <div className="flex justify-end space-x-2">
                   <Button type="button" variant="outline" onClick={resetForm}>
                     Cancelar
@@ -296,7 +356,7 @@ const Vendedores = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Loja ID</TableHead>
+                    <TableHead>Loja</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Telefone</TableHead>
                     <TableHead>Meta</TableHead>
