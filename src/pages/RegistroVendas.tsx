@@ -10,11 +10,11 @@ import { Plus, TrendingUp, Calendar, Users, Target } from 'lucide-react';
 import { Vendedor, Loja, RegistroVenda } from '@/types';
 import { showSuccess, showError } from '@/utils/toast';
 import { supabase } from '@/lib/supabaseClient';
-import { authService } from '@/lib/auth'; // <-- ADICIONADO FORA DO COMPONENTE
-
-const user = authService.getCurrentUser(); // <-- BUSCA O USUÁRIO FORA DO COMPONENTE
+import { authService } from '@/lib/auth';
 
 const RegistroVendas = () => {
+  // OBTÉM O USUÁRIO SEMPRE QUE O COMPONENTE É CARREGADO
+  const user = authService.getCurrentUser();
   const userId = user?.id;
 
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
@@ -32,6 +32,7 @@ const RegistroVendas = () => {
     if (userId) {
       loadData();
     }
+    // eslint-disable-next-line
   }, [userId]);
 
   const loadData = async () => {
