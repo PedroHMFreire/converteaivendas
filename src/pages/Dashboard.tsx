@@ -1,8 +1,6 @@
-// src/pages/Dashboard.tsx
-
 "use client";
 
-import { useEffect, useState, useTransition, Suspense } from "react";
+import { useEffect, useState, useTransition, Fragment } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
@@ -45,6 +43,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
   const charts = [
@@ -110,7 +109,7 @@ export default function DashboardPage() {
       </div>
 
       <Button
-        onClick={() => startTransition(fetchData)}
+        onClick={() => startTransition(() => fetchData())}
         disabled={loading}
         variant="outline"
       >
@@ -118,44 +117,42 @@ export default function DashboardPage() {
       </Button>
 
       {data ? (
-        <>
+        <Fragment>
           <Card>
             <CardHeader>
               <CardTitle>Resumo Geral</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <p>
-                Total de Atendimentos: <strong>{data.totalAtendimentos}</strong>
+                Total de Atendimentos: <strong>{data.totalAtendimentos ?? 0}</strong>
               </p>
               <p>
-                Total de Vendas: <strong>{data.totalVendas}</strong>
+                Total de Vendas: <strong>{data.totalVendas ?? 0}</strong>
               </p>
               <p>
-                Conversão Geral: <strong>{data.conversaoGeral}%</strong>
+                Conversão Geral: <strong>{data.conversaoGeral ?? 0}%</strong>
               </p>
               <p>
-                Ticket Médio: <strong>R$ {data.ticketMedio.toFixed(2)}</strong>
+                Ticket Médio: <strong>R$ {(data.ticketMedio ?? 0).toFixed(2)}</strong>
               </p>
             </CardContent>
           </Card>
 
           {charts.map((chart) => (
-            <Card key={chart.title}>
+            <Card key={chart.dataKey}>
               <CardHeader>
                 <CardTitle>{chart.title}</CardTitle>
               </CardHeader>
               <CardContent>
-                <Suspense fallback={<div>Carregando gráfico...</div>}>
-                  <Chart
-                    data={data[chart.dataKey]}
-                    type={chart.type}
-                    keys={chart.keys}
-                  />
-                </Suspense>
+                <Chart
+                  data={data[chart.dataKey] ?? []}
+                  type={chart.type}
+                  keys={chart.keys}
+                />
               </CardContent>
             </Card>
           ))}
-        </>
+        </Fragment>
       ) : (
         <p>Carregando dados...</p>
       )}
