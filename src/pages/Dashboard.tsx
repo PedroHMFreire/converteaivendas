@@ -3,7 +3,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { formatarPeriodo, getRangeFromFiltro } from "@/lib/utils";
+import { getRangeFromFiltro } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
