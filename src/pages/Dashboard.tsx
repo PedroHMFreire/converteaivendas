@@ -11,7 +11,6 @@ import { Chart } from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
 import { subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { supabase } from "@/lib/supabase";
 
 export default function DashboardPage() {
   const [range, setRange] = useState<{
