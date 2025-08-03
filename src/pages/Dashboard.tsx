@@ -3,13 +3,13 @@
 "use client";
 
 import { useEffect, useState, Suspense, useTransition } from "react";
-import { getDashboardData } from "@/lib/supabase/queries";
 import { formatarPeriodo, getRangeFromFiltro } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FiltrosPeriodo } from "@/components/dashboard/filtros-periodo";
 import { Chart } from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabase";
 
 export default function DashboardPage() {
   const [filtro, setFiltro] = useState("hoje");
@@ -18,15 +18,19 @@ export default function DashboardPage() {
 
   const fetchData = async () => {
     const range = getRangeFromFiltro(filtro);
-    const response = await getDashboardData(range);
-    if (!response.success) {
+    const { data, error } = await supabase.rpc("dashboard", {
+      inicio: range.inicio,
+      fim: range.fim,
+    });
+
+    if (error) {
       toast({
         title: "Erro ao carregar dados",
-        description: response.error.message,
+        description: error.message,
         variant: "destructive",
       });
     } else {
-      setData(response.data);
+      setData(data);
     }
   };
 
