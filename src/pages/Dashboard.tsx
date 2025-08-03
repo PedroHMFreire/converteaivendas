@@ -1,82 +1,143 @@
-import { useEffect, useState, Suspense } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Chart } from "@/components/ui/chart";
-import { getDashboardData } from "@/lib/supabase/dashboard";
+// src/pages/Dashboard.tsx
+
+"use client";
+
+import { useEffect, useState, Suspense, useTransition } from "react";
+import { getDashboardData } from "@/lib/supabase/queries";
+import { formatarPeriodo, getRangeFromFiltro } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { DateRange } from "react-day-picker";
-import { toast } from "sonner";
-import { RefreshCw } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FiltrosPeriodo } from "@/components/dashboard/filtros-periodo";
+import { Chart } from "@/components/ui/chart";
+import { toast } from "@/components/ui/use-toast";
 
 export default function DashboardPage() {
-  const [dashboard, setDashboard] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState<DateRange | undefined>(undefined);
-  const [refreshing, setRefreshing] = useState(false);
+  const [filtro, setFiltro] = useState("hoje");
+  const [loading, startTransition] = useTransition();
+  const [data, setData] = useState<any>(null);
 
   const fetchData = async () => {
-    try {
-      setLoading(true);
-      const data = await getDashboardData(range);
-      setDashboard(data);
-    } catch (error) {
-      console.error("Erro ao carregar dashboard:", error);
-      toast.error("Erro ao carregar os dados do dashboard");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshCache = async () => {
-    try {
-      setRefreshing(true);
-      const res = await fetch("/api/refresh", { method: "POST" });
-      const json = await res.json();
-      if (json.success) toast.success("Cache atualizado com sucesso");
-      else toast.error("Erro ao atualizar cache");
-      fetchData();
-    } catch (err) {
-      toast.error("Erro ao atualizar cache");
-    } finally {
-      setRefreshing(false);
+    const range = getRangeFromFiltro(filtro);
+    const response = await getDashboardData(range);
+    if (!response.success) {
+      toast({
+        title: "Erro ao carregar dados",
+        description: response.error.message,
+        variant: "destructive",
+      });
+    } else {
+      setData(response.data);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, [range]);
+  }, [filtro]);
 
-  if (loading) return <div className="p-4">Carregando dashboard...</div>;
+  const charts = [
+    {
+      title: "Atendimentos vs Vendas",
+      dataKey: "atendimentosVendasPorDia",
+      type: "bar",
+      keys: ["atendimentos", "vendas"],
+    },
+    {
+      title: "Vendas por Vendedor",
+      dataKey: "vendasPorVendedor",
+      type: "bar",
+      keys: ["vendas"],
+    },
+    {
+      title: "Atendimentos por Vendedor",
+      dataKey: "atendimentosPorVendedor",
+      type: "bar",
+      keys: ["atendimentos"],
+    },
+    {
+      title: "Melhor Dia da Semana",
+      dataKey: "diasDaSemana",
+      type: "bar",
+      keys: ["vendas"],
+    },
+    {
+      title: "Conversão por Loja",
+      dataKey: "conversaoPorLoja",
+      type: "bar",
+      keys: ["conversao"],
+    },
+    {
+      title: "Ranking de Conversão por Vendedor",
+      dataKey: "rankingConversao",
+      type: "bar",
+      keys: ["conversao"],
+    },
+  ];
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex flex-col md:flex-row justify-between gap-4">
-        <DateRangePicker initialDateFrom={range?.from} initialDateTo={range?.to} onUpdate={setRange} />
-        <Button onClick={refreshCache} disabled={refreshing} variant="outline">
-          <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Atualizar Cache
-        </Button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <span className="text-sm text-muted-foreground">
+          {formatarPeriodo(filtro)}
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="col-span-1 md:col-span-2">
-          <CardHeader>
-            <CardTitle>Resumo Geral</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>Total de Atendimentos: {dashboard.totalAtendimentos}</p>
-            <p>Total de Vendas: {dashboard.totalVendas}</p>
-            <p>Conversão Geral: {dashboard.conversaoGeral}%</p>
-            <p>Ticket Médio: R$ {dashboard.ticketMedio.toFixed(2)}</p>
-          </CardContent>
-        </Card>
+      <FiltrosPeriodo
+        filtro={filtro}
+        setFiltro={(value) => startTransition(() => setFiltro(value))}
+      />
 
-        <Chart title="Atendimentos vs Vendas" data={dashboard.atendimentosVsVendas} type="bar" />
-        <Chart title="Vendas por Vendedor" data={dashboard.vendasPorVendedor} type="bar" />
-        <Chart title="Atendimentos por Vendedor" data={dashboard.atendimentosPorVendedor} type="bar" />
-        <Chart title="Melhor Dia da Semana" data={dashboard.melhorDiaSemana} type="bar" />
-        <Chart title="Conversão por Loja" data={dashboard.conversaoPorLoja} type="bar" />
-        <Chart title="Ranking de Vendedores por Conversão" data={dashboard.rankingConversao} type="bar" />
-      </div>
+      <Button
+        onClick={() => startTransition(fetchData)}
+        disabled={loading}
+        variant="outline"
+      >
+        Atualizar Dados
+      </Button>
+
+      {data ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Resumo Geral</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p>
+                Total de Atendimentos:{" "}
+                <strong>{data.totalAtendimentos}</strong>
+              </p>
+              <p>
+                Total de Vendas: <strong>{data.totalVendas}</strong>
+              </p>
+              <p>
+                Conversão Geral: <strong>{data.conversaoGeral}%</strong>
+              </p>
+              <p>
+                Ticket Médio: <strong>R$ {data.ticketMedio.toFixed(2)}</strong>
+              </p>
+            </CardContent>
+          </Card>
+
+          {charts.map((chart) => (
+            <Card key={chart.title}>
+              <CardHeader>
+                <CardTitle>{chart.title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Suspense fallback={<div>Carregando gráfico...</div>}>
+                  <Chart
+                    data={data[chart.dataKey]}
+                    type={chart.type}
+                    keys={chart.keys}
+                  />
+                </Suspense>
+              </CardContent>
+            </Card>
+          ))}
+        </>
+      ) : (
+        <p>Carregando dados...</p>
+      )}
     </div>
   );
 }
