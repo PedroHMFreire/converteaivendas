@@ -1,4 +1,3 @@
-// Dashboard.tsx (versão mesclada e endurecida)
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,14 +15,12 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   Cell,
 } from 'recharts';
-import { TrendingUp, Users, Store, Target, Calendar, Download } from 'lucide-react';
-import { formatPercentage, formatDate } from '@/lib/dashboard-utils';
+import { TrendingUp, Users, Store, Target, Download } from 'lucide-react';
+import { formatPercentage } from '@/lib/dashboard-utils';
 import { DashboardData } from '@/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -50,7 +47,6 @@ export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const fetchRef = useRef<number | null>(null);
   const debounceTimer = useRef<any>(null);
 
   // obtém sessão / user
@@ -88,14 +84,12 @@ export default function Dashboard() {
             user_id: uid,
             inicio,
             fim,
-          })
-          .throwOnError();
+          });
 
         if (error || !data) {
           throw error ?? new Error('Resposta vazia da RPC');
         }
 
-        // validar estrutura mínima
         const parsed: Partial<DashboardData> = data as any;
         if (
           typeof parsed.conversaoGeral === 'undefined' ||
@@ -108,9 +102,9 @@ export default function Dashboard() {
         setLastUpdated(new Date().toLocaleString('pt-BR'));
       } catch (rpcErr) {
         console.warn('Erro na RPC, caindo no fallback local:', rpcErr);
-        // fallback local: calcula no cliente
         try {
-          const local = await calculateDashboardData(inicio, fim);
+          if (!userId) throw new Error('UserId ausente no fallback');
+          const local = await calculateDashboardData(userId, inicio, fim);
           setDashboardData(local);
           setLastUpdated(new Date().toLocaleString('pt-BR') + ' (modo local)');
           setErrorMsg('Dados exibidos em fallback local; pode não estar 100% sincronizado.');
@@ -123,18 +117,16 @@ export default function Dashboard() {
         setLoading(false);
       }
     },
-    []
+    [userId]
   );
 
   // debounce e evitar fetchs paralelos
   useEffect(() => {
     if (!userId) return;
-    // limpar anterior
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       loadDashboardData(dataInicio, dataFim, userId);
-    }, 300); // 300ms debounce
-
+    }, 300);
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
@@ -153,10 +145,10 @@ export default function Dashboard() {
       head: [['Métrica', 'Valor']],
       body: [
         ['Conversão Geral', formatPercentage(dashboardData.conversaoGeral)],
-        ['Total de Vendas', dashboardData.totalVendas],
-        ['Total de Atendimentos', dashboardData.totalAtendimentos],
-        ['Ticket Médio', dashboardData.ticketMedio],
-        ['Melhor Loja', dashboardData.melhorLoja],
+        ['Total de Vendas', String(dashboardData.totalVendas)],
+        ['Total de Atendimentos', String(dashboardData.totalAtendimentos)],
+        ['Ticket Médio', String(dashboardData.ticketMedio)],
+        ['Melhor Loja', String(dashboardData.melhorLoja)],
         ['Período', `${dataInicio} a ${dataFim}`],
       ],
       headStyles: { fillColor: [33, 150, 243], textColor: [255, 255, 255] },
@@ -277,7 +269,6 @@ export default function Dashboard() {
                   />
                 </div>
 
-                {/* Gráficos adicionais como no original */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                   <Card>
                     <CardHeader>
@@ -293,7 +284,6 @@ export default function Dashboard() {
                             cx="50%"
                             cy="50%"
                             outerRadius={60}
-                            fill="#8884d8"
                             label
                           >
                             {dashboardData.conversoesPorCanal.map((entry, idx) => (
@@ -304,7 +294,6 @@ export default function Dashboard() {
                       </ResponsiveContainer>
                     </CardContent>
                   </Card>
-                  {/* outros cards de linha / barra se existirem no dashboardData */}
                 </div>
               </>
             )}
