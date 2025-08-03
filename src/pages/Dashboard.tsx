@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+// Dashboard.tsx (versão mesclada e endurecida)
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,81 +27,135 @@ import { formatPercentage, formatDate } from '@/lib/dashboard-utils';
 import { DashboardData } from '@/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { authService } from '@/lib/auth';
+import { supabase } from '@/lib/supabaseClient';
+import { calculateDashboardData } from '@/lib/dashboard-utils';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
-const Dashboard = () => {
+const defaultDateRange = () => {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  return {
+    inicio: firstDay.toISOString().slice(0, 10),
+    fim: lastDay.toISOString().slice(0, 10),
+  };
+};
+
+export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [dataInicio, setDataInicio] = useState<string>(() => defaultDateRange().inicio);
+  const [dataFim, setDataFim] = useState<string>(() => defaultDateRange().fim);
+  const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const fetchRef = useRef<number | null>(null);
+  const debounceTimer = useRef<any>(null);
 
-  useEffect(() => {
-    const init = async () => {
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser) return;
-      setUserId(currentUser.id);
-
-      const hoje = new Date();
-      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-      const isoInicio = inicioMes.toISOString().split('T')[0];
-      const isoFim = hoje.toISOString().split('T')[0];
-      setDataInicio(isoInicio);
-      setDataFim(isoFim);
-
-      await loadDashboardData(isoInicio, isoFim, currentUser.id);
-    };
-
-    init();
-    // eslint-disable-next-line
+  // obtém sessão / user
+  const loadUser = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      setUserId(session.user.id);
+    }
   }, []);
 
-  const loadDashboardData = async (inicio?: string, fim?: string, uId?: string) => {
-    if (!uId) return;
-    setLoading(true);
-    try {
-      const { calculateDashboardData } = await import('@/lib/dashboard-utils');
-      const data = await calculateDashboardData(uId, inicio, fim);
-      setDashboardData(data);
-    } catch (err) {
-      console.error('Erro carregando dashboard:', err);
-      setDashboardData(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    loadUser();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user?.id) {
+        setUserId(session.user.id);
+      } else {
+        setUserId(null);
+      }
+    });
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [loadUser]);
 
-  const handleFilterChange = async () => {
+  const loadDashboardData = useCallback(
+    async (inicio: string, fim: string, uid: string) => {
+      setLoading(true);
+      setErrorMsg(null);
+      try {
+        // primeira tentativa: RPC Supabase
+        const { data, error } = await supabase
+          .rpc('calculate_dashboard_data', {
+            user_id: uid,
+            inicio,
+            fim,
+          })
+          .throwOnError();
+
+        if (error || !data) {
+          throw error ?? new Error('Resposta vazia da RPC');
+        }
+
+        // validar estrutura mínima
+        const parsed: Partial<DashboardData> = data as any;
+        if (
+          typeof parsed.conversaoGeral === 'undefined' ||
+          typeof parsed.totalVendas === 'undefined'
+        ) {
+          throw new Error('Formato inesperado da RPC');
+        }
+
+        setDashboardData(parsed as DashboardData);
+        setLastUpdated(new Date().toLocaleString('pt-BR'));
+      } catch (rpcErr) {
+        console.warn('Erro na RPC, caindo no fallback local:', rpcErr);
+        // fallback local: calcula no cliente
+        try {
+          const local = await calculateDashboardData(inicio, fim);
+          setDashboardData(local);
+          setLastUpdated(new Date().toLocaleString('pt-BR') + ' (modo local)');
+          setErrorMsg('Dados exibidos em fallback local; pode não estar 100% sincronizado.');
+        } catch (localErr) {
+          console.error('Erro no fallback local também:', localErr);
+          setErrorMsg('Falha ao carregar dados. Tente novamente mais tarde.');
+          setDashboardData(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  // debounce e evitar fetchs paralelos
+  useEffect(() => {
     if (!userId) return;
-    if (dataInicio > dataFim) {
-      return; // poderia mostrar toast se quiser
-    }
-    await loadDashboardData(dataInicio, dataFim, userId);
-  };
+    // limpar anterior
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      loadDashboardData(dataInicio, dataFim, userId);
+    }, 300); // 300ms debounce
+
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [dataInicio, dataFim, userId, loadDashboardData]);
 
   const handleExportPDF = () => {
     if (!dashboardData) return;
     const doc = new jsPDF();
-    doc.setFontSize(22);
-    doc.setTextColor(33, 150, 243);
-    doc.text('Relatório de Conversão - Convertê', 14, 18);
-    doc.setDrawColor(33, 150, 243);
-    doc.line(14, 21, 196, 21);
-    doc.setFontSize(12);
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Exportado em: ${new Date().toLocaleDateString()}`, 14, 28);
+    doc.setFontSize(18);
+    doc.text('Relatório do Dashboard', 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Período: ${dataInicio} a ${dataFim}`, 14, 30);
+    doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 36);
 
     autoTable(doc, {
-      startY: 36,
-      theme: 'striped',
       head: [['Métrica', 'Valor']],
       body: [
         ['Conversão Geral', formatPercentage(dashboardData.conversaoGeral)],
-        ['Total de Atendimentos', dashboardData.totalAtendimentos.toLocaleString()],
-        ['Total de Vendas', dashboardData.totalVendas.toLocaleString()],
-        ['Melhor Vendedor', dashboardData.melhorVendedor],
+        ['Total de Vendas', dashboardData.totalVendas],
+        ['Total de Atendimentos', dashboardData.totalAtendimentos],
+        ['Ticket Médio', dashboardData.ticketMedio],
         ['Melhor Loja', dashboardData.melhorLoja],
         ['Período', `${dataInicio} a ${dataFim}`],
       ],
@@ -111,11 +166,14 @@ const Dashboard = () => {
 
     doc.setFontSize(10);
     doc.setTextColor(160, 160, 160);
-    doc.text('Sistema Convertê - Relatório gerado automaticamente', 14, doc.internal.pageSize.getHeight() - 10);
+    doc.text(
+      'Sistema Convertê - Relatório gerado automaticamente',
+      14,
+      doc.internal.pageSize.getHeight() - 10
+    );
     doc.save('relatorio-dashboard.pdf');
   };
 
-  // se ainda não carregou userId, mostra carregando
   if (!userId || loading) {
     return (
       <AuthGuard>
@@ -136,109 +194,123 @@ const Dashboard = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
         <Header />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <TrialBanner />
-          <Card className="mb-8 bg-white dark:bg-[#1E2637] border border-gray-200 dark:border-[#27304A]">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2 text-gray-900 dark:text-[#F3F4F6]">
-                <Calendar className="w-5 h-5" />
-                <span>Filtros de Período</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div>
-                  <Label htmlFor="dataInicio" className="text-gray-700 dark:text-[#A0AEC0]">
-                    Data Início
-                  </Label>
-                  <Input
-                    id="dataInicio"
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(e.target.value)}
-                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="dataFim" className="text-gray-700 dark:text-[#A0AEC0]">
-                    Data Fim
-                  </Label>
-                  <Input
-                    id="dataFim"
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => setDataFim(e.target.value)}
-                    className="bg-white dark:bg-[#222C43] border border-gray-300 dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                  />
-                </div>
-                <Button
-                  className="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                  onClick={handleFilterChange}
-                  disabled={loading}
-                >
-                  Aplicar Filtros
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex flex-wrap gap-2 items-end">
+              <div>
+                <Label htmlFor="inicio">Início</Label>
+                <Input
+                  id="inicio"
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                  className="max-w-[160px]"
+                />
+              </div>
+              <div>
+                <Label htmlFor="fim">Fim</Label>
+                <Input
+                  id="fim"
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                  className="max-w-[160px]"
+                />
+              </div>
+              <div className="ml-auto flex gap-2 items-center">
+                {lastUpdated && (
+                  <div className="text-sm text-gray-500 dark:text-gray-300">
+                    Última atualização: {lastUpdated}
+                  </div>
+                )}
+                <Button onClick={() => userId && loadDashboardData(dataInicio, dataFim, userId)}>
+                  <Download className="w-4 h-4 mr-1" />
+                  Atualizar
                 </Button>
-                <Button
-                  variant="outline"
-                  className="border-gray-300 dark:border-[#27304A] text-gray-700 dark:text-[#A0AEC0]"
-                  onClick={handleExportPDF}
-                  disabled={!dashboardData}
-                >
-                  <Download className="w-4 h-4 mr-2" />
+                <Button onClick={handleExportPDF}>
+                  <Download className="w-4 h-4 mr-1" />
                   Exportar
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          {!dashboardData && !loading && (
-            <div className="text-center py-12">
-              <p className="text-gray-700">Sem dados para o período selecionado.</p>
             </div>
-          )}
 
-          {dashboardData && (
-            <>
-              {/* Métricas Principais */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <MetricCard
-                  title="Conversão Geral"
-                  value={formatPercentage(dashboardData.conversaoGeral)}
-                  subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
-                  icon={TrendingUp}
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
-                />
-                <MetricCard
-                  title="Total de Atendimentos"
-                  value={dashboardData.totalAtendimentos.toLocaleString()}
-                  subtitle="No período selecionado"
-                  icon={Users}
-                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                />
-                <MetricCard
-                  title="Total de Vendas"
-                  value={dashboardData.totalVendas.toLocaleString()}
-                  subtitle="Vendas efetivadas"
-                  icon={Target}
-                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                />
-                <MetricCard
-                  title="Melhor Vendedor"
-                  value={dashboardData.melhorVendedor}
-                  subtitle="Maior conversão do período"
-                  icon={Store}
-                  className="bg-white dark:bg-[#1E2637] border dark:border-[#27304A] text-gray-900 dark:text-[#F3F4F6]"
-                />
+            {errorMsg && (
+              <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-2 rounded mb-2">
+                {errorMsg}
               </div>
+            )}
 
-              {/* Gráficos */}
-              {/* ... Aqui você pode reutilizar os gráficos do dashboard antigo com os dados de dashboardData ... */}
-            </>
-          )}
+            {!dashboardData && !loading && (
+              <div className="text-center py-12">
+                <p className="text-gray-700">Sem dados para o período selecionado.</p>
+              </div>
+            )}
+
+            {dashboardData && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                  <MetricCard
+                    title="Conversão Geral"
+                    value={formatPercentage(dashboardData.conversaoGeral)}
+                    subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
+                    icon={TrendingUp}
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
+                  />
+                  <MetricCard
+                    title="Total de Atendimentos"
+                    value={dashboardData.totalAtendimentos}
+                    icon={Users}
+                    className="bg-gradient-to-r from-green-500 to-green-600 text-white"
+                  />
+                  <MetricCard
+                    title="Ticket Médio"
+                    value={dashboardData.ticketMedio}
+                    icon={Target}
+                    className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-white"
+                  />
+                  <MetricCard
+                    title="Melhor Loja"
+                    value={dashboardData.melhorLoja}
+                    icon={Store}
+                    className="bg-gradient-to-r from-purple-500 to-purple-600 text-white"
+                  />
+                </div>
+
+                {/* Gráficos adicionais como no original */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Distribuição de Conversão</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <PieChart>
+                          <Pie
+                            data={dashboardData.conversoesPorCanal}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={60}
+                            fill="#8884d8"
+                            label
+                          >
+                            {dashboardData.conversoesPorCanal.map((entry, idx) => (
+                              <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                  {/* outros cards de linha / barra se existirem no dashboardData */}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </AuthGuard>
   );
-};
-
-export default Dashboard;
+}
