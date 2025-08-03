@@ -106,7 +106,8 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <span className="text-sm text-muted-foreground">
-          {formatarPeriodo(filtro)}
+          {formatarPeriodo(range)}
+          
         </span>
       </div>
 
