@@ -39,21 +39,6 @@ export default function DashboardPage() {
         variant: "destructive",
       });
     } else {
-      setData(dashboardData);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [range]);
-
-    if (error) {
-      toast({
-        title: "Erro ao carregar dados",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
       setData(data);
     }
   };
