@@ -110,10 +110,19 @@ export default function DashboardPage() {
         </span>
       </div>
 
-      <FiltrosPeriodo
-        filtro={filtro}
-        setFiltro={(value) => startTransition(() => setFiltro(value))}
-      />
+     <div className="flex justify-center py-4">
+  <Calendar
+    initialFocus
+    mode="range"
+    selected={range}
+    onSelect={(value) => {
+      if (value?.from && value?.to) {
+        setRange({ from: value.from, to: value.to });
+      }
+    }}
+    locale={ptBR}
+  />
+</div>
 
       <Button
         onClick={() => startTransition(fetchData)}
