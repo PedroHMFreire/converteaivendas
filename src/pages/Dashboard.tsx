@@ -9,16 +9,16 @@ import {
 import { useEffect, useState } from "react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import dynamic from "next/dynamic"
+import { lazy, Suspense } from "react"
 import { fetchDashboardData, refreshDashboardCache } from "@/lib/dashboard-utils"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const PieChart = dynamic(() => import("@/components/charts/PieChart"), { ssr: false })
-const BarChart = dynamic(() => import("@/components/charts/BarChart"), { ssr: false })
-const LineChart = dynamic(() => import("@/components/charts/LineChart"), { ssr: false })
-const DualLineChart = dynamic(() => import("@/components/charts/DualLineChart"), { ssr: false })
-const RadarChart = dynamic(() => import("@/components/charts/RadarChart"), { ssr: false })
+const PieChart = lazy(() => import("@/components/charts/PieChart"))
+const BarChart = lazy(() => import("@/components/charts/BarChart"))
+const LineChart = lazy(() => import("@/components/charts/LineChart"))
+const DualLineChart = lazy(() => import("@/components/charts/DualLineChart"))
+const RadarChart = lazy(() => import("@/components/charts/RadarChart"))
 
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<any | null>(null)
@@ -77,7 +77,11 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="col-span-1 md:col-span-2">
           <CardHeader><CardTitle>Evolução Semanal da Conversão</CardTitle></CardHeader>
-          <CardContent><LineChart data={dashboard.conversaoPorDia} /></CardContent>
+          <CardContent>
+  <Suspense fallback={<div>Carregando gráfico...</div>}>
+    <LineChart data={dashboard.conversaoPorDia} />
+  </Suspense>
+</CardContent>
         </Card>
 
         <Card className="col-span-1 md:col-span-2">
