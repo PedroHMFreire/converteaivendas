@@ -7,7 +7,7 @@ import { getRangeFromFiltro } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
-import { Chart } from "@/components/ui/chart";
+import Chart from "@/components/ui/chart"; // ✅ Corrigido: importação default
 import { toast } from "@/components/ui/use-toast";
 import { subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
