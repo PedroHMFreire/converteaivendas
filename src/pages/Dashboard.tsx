@@ -30,6 +30,8 @@ export default function DashboardPage() {
       end_date: to.toISOString(),
     });
 
+    console.log("DASHBOARD DATA:", dashboardData, "ERROR:", error);
+
     if (error) {
       toast({
         title: "Erro ao carregar dados",
@@ -116,7 +118,7 @@ export default function DashboardPage() {
         Atualizar Dados
       </Button>
 
-      {data ? (
+      {data && typeof data === "object" ? (
         <Fragment>
           <Card>
             <CardHeader>
@@ -145,7 +147,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <Chart
-                  data={data[chart.dataKey] ?? []}
+                  data={Array.isArray(data[chart.dataKey]) ? data[chart.dataKey] : []}
                   type={chart.type}
                   keys={chart.keys}
                 />
