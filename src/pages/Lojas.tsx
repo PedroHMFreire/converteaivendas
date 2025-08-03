@@ -1,466 +1,221 @@
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import Header from '@/components/Header';
-import {
-  Plus,
-  Store as StoreIcon,
-  Edit,
-  Trash2,
-  MapPin,
-  Phone,
-  User,
-} from 'lucide-react';
-import { Loja } from '@/types';
-import { showSuccess, showError } from '@/utils/toast';
-import { supabase } from '@/lib/supabaseClient';
-import { authService } from '@/lib/auth';
+import { useEffect, useState, useRef } from "react";
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { authService } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+
+// Chave base para salvar lojas locais por usuário
+const LOCAL_KEY = "converte:lojas:";
+
+// Utilitário para obter a chave localStorage por usuário
+function getLocalKey(userId: string) {
+  return `${LOCAL_KEY}${userId}`;
+}
+
+// Função para salvar lojas locais
+function salvarLojasLocais(userId: string, lojas: Loja[]) {
+  localStorage.setItem(getLocalKey(userId), JSON.stringify(lojas));
+}
+
+// Função para carregar lojas locais
+function carregarLojasLocais(userId: string): Loja[] {
+  const raw = localStorage.getItem(getLocalKey(userId));
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+// Função para sincronizar lojas locais com Supabase (backup)
+async function sincronizarComBanco(userId: string, lojas: Loja[]) {
+  try {
+    await supabase
+      .from("lojas_backup")
+      .upsert([{ user_id: userId, lojas, updated_at: new Date().toISOString() }]);
+  } catch (err) {
+    console.error("Erro ao sincronizar lojas com banco:", err);
+  }
+}
+
+// Tipo Loja (ajuste conforme seu modelo)
+type Loja = {
+  id: string;
+  nome: string;
+  // ...outros campos...
+};
 
 const Lojas = () => {
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLoja, setEditingLoja] = useState<Loja | null>(null);
-  const [formData, setFormData] = useState({
-    nome: '',
-    endereco: '',
-    telefone: '',
-    gerente: '',
-  });
-  const [userId, setUserId] = useState<string>('');
-  const [loadingLojas, setLoadingLojas] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [vendedoresPorLoja, setVendedoresPorLoja] = useState<{
-    [lojaId: string]: number;
-  }>({});
+  const [userId, setUserId] = useState<string | null>(null);
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Carrega usuário e lojas
+  // Carrega lojas locais ao abrir a página
   useEffect(() => {
     const init = async () => {
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser?.id) {
-        showError('Usuário não autenticado.');
+      const user = await authService.getCurrentUser();
+      if (!user?.id) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado.",
+          variant: "destructive",
+        });
         return;
       }
-      setUserId(currentUser.id);
-      await loadLojas(currentUser.id);
+      setUserId(user.id);
+
+      // 1. Tenta carregar do localStorage
+      let lojasLocais = carregarLojasLocais(user.id);
+
+      // 2. Se não houver dados locais, busca do Supabase (fallback) e salva localmente
+      if (!lojasLocais.length) {
+        const { data, error } = await supabase
+          .from("lojas_backup")
+          .select("lojas")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (data?.lojas) {
+          lojasLocais = data.lojas;
+          salvarLojasLocais(user.id, lojasLocais);
+        }
+        if (error) {
+          toast({
+            title: "Erro ao buscar lojas do Supabase",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
+      }
+
+      setLojas(lojasLocais);
     };
     init();
     // eslint-disable-next-line
   }, []);
 
-  // Carrega lojas do usuário
-  const loadLojas = async (uid: string) => {
-    if (!uid) return;
-    setLoadingLojas(true);
-    try {
-      const { data, error } = await supabase
-        .from('lojas')
-        .select('*')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Erro ao carregar lojas:', error);
-        showError('Erro ao carregar lojas');
-        return;
-      }
-      setLojas(data || []);
-    } finally {
-      setLoadingLojas(false);
-    }
-  };
-
-  // Atualiza contagem de vendedores por loja
+  // Sincronização automática a cada 30 minutos
   useEffect(() => {
-    const fetchVendedoresCount = async () => {
-      if (!userId) return;
-      const map: { [lojaId: string]: number } = {};
-      for (const loja of lojas) {
-        try {
-          const { count, error } = await supabase
-            .from('vendedores')
-            .select('id', { count: 'exact', head: true })
-            .eq('lojaId', loja.id)
-            .eq('user_id', userId);
-
-          if (error) {
-            console.error(`Erro ao contar vendedores da loja ${loja.id}:`, error);
-            map[loja.id] = 0;
-          } else {
-            map[loja.id] = count || 0;
-          }
-        } catch (err) {
-          console.error('Erro inesperado ao buscar vendedores:', err);
-          map[loja.id] = 0;
-        }
-      }
-      setVendedoresPorLoja(map);
+    if (!userId || !lojas.length) return;
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    syncIntervalRef.current = setInterval(() => {
+      sincronizarComBanco(userId, lojas);
+    }, 10 * 60 * 1000); // 30 minutos
+    return () => {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     };
+  }, [userId, lojas]);
 
-    if (lojas.length > 0 && userId) {
-      fetchVendedoresCount();
+  // Adiciona ou edita uma loja
+  const salvarLoja = (loja: Loja) => {
+    if (!userId) return;
+    let novasLojas: Loja[];
+    if (editingLoja) {
+      // Editar
+      novasLojas = lojas.map((l) => (l.id === loja.id ? loja : l));
+    } else {
+      // Adicionar
+      novasLojas = [...lojas, loja];
     }
-  }, [lojas, userId]);
-
-  const resetForm = () => {
-    setFormData({
-      nome: '',
-      endereco: '',
-      telefone: '',
-      gerente: '',
-    });
-    setEditingLoja(null);
+    setLojas(novasLojas);
+    salvarLojasLocais(userId, novasLojas);
+    sincronizarComBanco(userId, novasLojas); // backup imediato
     setIsDialogOpen(false);
-    setSubmitting(false);
+    setEditingLoja(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submitting) return; // evita múltiplos submits
-    if (!formData.nome || !formData.endereco || !formData.gerente) {
-      showError('Preencha todos os campos obrigatórios');
-      return;
-    }
-    if (!userId) {
-      showError('Erro: usuário não identificado');
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      // prevenção de duplicidade ao criar nova loja
-      if (!editingLoja) {
-        const { data: existing, error: fetchErr } = await supabase
-          .from('lojas')
-          .select('id')
-          .eq('user_id', userId)
-          .ilike('nome', formData.nome.trim());
-
-        if (fetchErr) {
-          console.warn('Erro ao verificar duplicidade:', fetchErr);
-        } else if (existing && existing.length > 0) {
-          showError('Já existe uma loja com esse nome.');
-          return;
-        }
-      }
-
-      if (editingLoja) {
-        // Editar loja existente
-        const { error } = await supabase
-          .from('lojas')
-          .update({
-            nome: formData.nome,
-            endereco: formData.endereco,
-            telefone: formData.telefone,
-            gerente: formData.gerente,
-          })
-          .eq('id', editingLoja.id)
-          .eq('user_id', userId);
-
-        if (error) {
-          console.error('Erro ao atualizar loja:', error);
-          showError('Erro ao atualizar loja');
-        } else {
-          showSuccess('Loja atualizada com sucesso!');
-          resetForm();
-          await loadLojas(userId);
-        }
-      } else {
-        // Criar nova loja
-        const { error } = await supabase.from('lojas').insert([
-          {
-            nome: formData.nome,
-            endereco: formData.endereco,
-            telefone: formData.telefone,
-            gerente: formData.gerente,
-            user_id: userId,
-          },
-        ]);
-
-        if (error) {
-          console.error('Erro ao cadastrar loja:', error);
-          showError('Erro ao cadastrar loja');
-        } else {
-          showSuccess('Loja cadastrada com sucesso!');
-          resetForm();
-          await loadLojas(userId);
-        }
-      }
-    } finally {
-      setSubmitting(false);
-    }
+  // Exclui uma loja
+  const excluirLoja = (id: string) => {
+    if (!userId) return;
+    const novasLojas = lojas.filter((l) => l.id !== id);
+    setLojas(novasLojas);
+    salvarLojasLocais(userId, novasLojas);
+    sincronizarComBanco(userId, novasLojas); // backup imediato
   };
 
-  const handleEdit = (loja: Loja) => {
+  // Abre o modal para editar
+  const editarLoja = (loja: Loja) => {
     setEditingLoja(loja);
-    setFormData({
-      nome: loja.nome,
-      endereco: loja.endereco,
-      telefone: loja.telefone,
-      gerente: loja.gerente,
-    });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (lojaId: string) => {
-    if (!userId) return;
-    if (confirm('Tem certeza que deseja excluir esta loja?')) {
-      try {
-        const { error } = await supabase
-          .from('lojas')
-          .delete()
-          .eq('id', lojaId)
-          .eq('user_id', userId);
-        if (error) {
-          console.error('Erro ao excluir loja:', error);
-          showError('Erro ao excluir loja');
-        } else {
-          showSuccess('Loja excluída com sucesso!');
-          await loadLojas(userId);
-        }
-      } catch (err) {
-        console.error('Erro inesperado ao excluir loja:', err);
-        showError('Erro ao excluir loja');
-      }
-    }
+  // Abre o modal para adicionar
+  const novaLoja = () => {
+    setEditingLoja(null);
+    setIsDialogOpen(true);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Gerenciar Lojas
-            </h1>
-            <p className="text-gray-600 mt-2">Cadastre e gerencie suas lojas</p>
-          </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => resetForm()}>
-                <Plus className="w-4 h-4 mr-2" />
-                Nova Loja
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingLoja ? 'Editar Loja' : 'Nova Loja'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="nome">Nome da Loja *</Label>
-                  <Input
-                    id="nome"
-                    value={formData.nome}
-                    onChange={(e) =>
-                      setFormData({ ...formData, nome: e.target.value })
-                    }
-                    placeholder="Ex: Loja Centro"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="endereco">Endereço *</Label>
-                  <Input
-                    id="endereco"
-                    value={formData.endereco}
-                    onChange={(e) =>
-                      setFormData({ ...formData, endereco: e.target.value })
-                    }
-                    placeholder="Ex: Rua das Flores, 123"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="telefone">Telefone</Label>
-                  <Input
-                    id="telefone"
-                    value={formData.telefone}
-                    onChange={(e) =>
-                      setFormData({ ...formData, telefone: e.target.value })
-                    }
-                    placeholder="Ex: (11) 99999-9999"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="gerente">Gerente *</Label>
-                  <Input
-                    id="gerente"
-                    value={formData.gerente}
-                    onChange={(e) =>
-                      setFormData({ ...formData, gerente: e.target.value })
-                    }
-                    placeholder="Ex: João Silva"
-                  />
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button type="button" variant="outline" onClick={resetForm}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={submitting}>
-                    {editingLoja
-                      ? submitting
-                        ? 'Atualizando...'
-                        : 'Atualizar'
-                      : submitting
-                      ? 'Cadastrando...'
-                      : 'Cadastrar'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {/* Cards de Resumo */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total de Lojas</CardTitle>
-              <StoreIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{lojas.length}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total de Vendedores
-              </CardTitle>
-              <User className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {Object.values(vendedoresPorLoja).reduce((total, n) => total + n, 0)}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Média Vendedores/Loja
-              </CardTitle>
-              <StoreIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {lojas.length > 0
-                  ? (
-                      Object.values(vendedoresPorLoja).reduce(
-                        (total, n) => total + n,
-                        0
-                      ) / lojas.length
-                    ).toFixed(1)
-                  : '0'}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tabela de Lojas */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista de Lojas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {lojas.length === 0 ? (
-              <div className="text-center py-8">
-                <StoreIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhuma loja cadastrada
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Comece cadastrando sua primeira loja
-                </p>
-                <Button onClick={() => setIsDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Cadastrar Primeira Loja
-                </Button>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Endereço</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Gerente</TableHead>
-                    <TableHead>Vendedores</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lojas.map((loja) => (
-                    <TableRow key={loja.id}>
-                      <TableCell className="font-medium">{loja.nome}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          <span>{loja.endereco}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Phone className="w-4 h-4 text-gray-400" />
-                          <span>{loja.telefone || 'N/A'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <User className="w-4 h-4 text-gray-400" />
-                          <span>{loja.gerente}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm">
-                          {vendedoresPorLoja[loja.id] ?? 0}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(loja)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(loja.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Lojas</h1>
+        <Button onClick={novaLoja}>Nova Loja</Button>
       </div>
+      <ul>
+        {lojas.map((loja) => (
+          <li key={loja.id} className="flex justify-between items-center border-b py-2">
+            <span>{loja.nome}</span>
+            <div>
+              <Button variant="outline" size="sm" onClick={() => editarLoja(loja)}>
+                Editar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="ml-2"
+                onClick={() => excluirLoja(loja.id)}
+              >
+                Excluir
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {/* Modal de adicionar/editar loja (exemplo simples, substitua pelo seu dialog/modal) */}
+      {isDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded shadow-lg min-w-[300px]">
+            <h2 className="text-lg font-bold mb-2">
+              {editingLoja ? "Editar Loja" : "Nova Loja"}
+            </h2>
+            {/* Formulário simples, ajuste conforme seu modelo */}
+            <input
+              className="border p-2 w-full mb-2"
+              placeholder="Nome da loja"
+              value={editingLoja?.nome ?? ""}
+              onChange={(e) =>
+                setEditingLoja((prev) =>
+                  prev ? { ...prev, nome: e.target.value } : { id: crypto.randomUUID(), nome: e.target.value }
+                )
+              }
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  if (editingLoja && editingLoja.nome.trim()) {
+                    salvarLoja(editingLoja);
+                  } else {
+                    toast({
+                      title: "Erro",
+                      description: "Nome da loja obrigatório.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

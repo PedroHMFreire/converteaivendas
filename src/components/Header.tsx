@@ -22,14 +22,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useTheme } from 'next-themes'; // IMPORTANTE
+import { useTheme } from 'next-themes';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const user = authService.getCurrentUser();
-  const { theme, setTheme } = useTheme(); // PARA TROCA DE TEMA
+  const { theme, setTheme } = useTheme();
 
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -55,13 +55,12 @@ const Header = () => {
       .toUpperCase();
   };
 
-  // BOTÃO DE TEMA
   const ThemeToggleButton = () => (
     <button
       onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
       className="p-2 rounded-full border hover:bg-gray-200 dark:hover:bg-gray-800 transition"
       title={`Alternar para tema ${theme === 'dark' ? 'claro' : 'escuro'}`}
-      style={{ marginRight: 4 }} // Deixa coladinho do avatar
+      style={{ marginRight: 4 }}
     >
       {theme === 'dark' ? (
         <Sun className="w-5 h-5 text-yellow-500" />
@@ -73,8 +72,8 @@ const Header = () => {
 
   return (
     <header className="bg-white shadow-sm border-b dark:bg-gray-900 dark:border-gray-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+      <div className="w-full flex flex-col">
+        <div className="flex justify-between items-center h-16 px-2 md:px-4">
           {/* Logo */}
           <div className="flex items-center">
             <button
@@ -111,7 +110,7 @@ const Header = () => {
 
           {/* User Menu + Tema */}
           <div className="flex items-center space-x-2">
-            <ThemeToggleButton /> {/* BOTÃO DE TEMA */}
+            <ThemeToggleButton />
             {user && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

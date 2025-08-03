@@ -1,30 +1,45 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Header from '@/components/Header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Plus, User, Trash2, Edit } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
-import { authService } from '@/lib/auth';
-import { showError, showSuccess } from '@/utils/toast';
+import { useEffect, useState, useRef } from "react";
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
+import { authService } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 
+// Chave base para salvar vendedores locais por usuário
+const LOCAL_KEY = "converte:vendedores:";
+
+// Utilitário para obter a chave localStorage por usuário
+function getLocalKey(userId: string) {
+  return `${LOCAL_KEY}${userId}`;
+}
+
+// Função para salvar vendedores locais
+function salvarVendedoresLocais(userId: string, vendedores: Vendedor[]) {
+  localStorage.setItem(getLocalKey(userId), JSON.stringify(vendedores));
+}
+
+// Função para carregar vendedores locais
+function carregarVendedoresLocais(userId: string): Vendedor[] {
+  const raw = localStorage.getItem(getLocalKey(userId));
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+// Função para sincronizar vendedores locais com Supabase (backup)
+async function sincronizarComBanco(userId: string, vendedores: Vendedor[]) {
+  try {
+    await supabase
+      .from("vendedores_backup")
+      .upsert([{ user_id: userId, vendedores, updated_at: new Date().toISOString() }]);
+  } catch (err) {
+    console.error("Erro ao sincronizar vendedores com banco:", err);
+  }
+}
+
+// Tipo Vendedor (ajuste conforme seu modelo)
 type Vendedor = {
   id: string;
   nome: string;
@@ -41,359 +56,220 @@ type LojaOption = {
 };
 
 const Vendedores = () => {
-  const navigate = useNavigate();
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<LojaOption[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVendedor, setEditingVendedor] = useState<Vendedor | null>(null);
-  const [formData, setFormData] = useState({
-    nome: '',
-    lojaId: '',
-    email: '',
-    telefone: '',
-    meta: '',
-  });
-  const [userId, setUserId] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Carrega vendedores locais ao abrir a página
   useEffect(() => {
     const init = async () => {
-      const currentUser = await authService.getCurrentUser();
-      if (!currentUser?.id) {
-        showError('Usuário não autenticado');
+      const user = await authService.getCurrentUser();
+      if (!user?.id) {
+        toast({
+          title: "Erro",
+          description: "Usuário não autenticado.",
+          variant: "destructive",
+        });
         return;
       }
-      setUserId(currentUser.id);
-      await loadLojasDoUsuario(currentUser.id);
-      await loadVendedores(currentUser.id);
+      setUserId(user.id);
+
+      // 1. Tenta carregar do localStorage
+      let vendedoresLocais = carregarVendedoresLocais(user.id);
+
+      // 2. Se não houver dados locais, busca do Supabase (fallback) e salva localmente
+      if (!vendedoresLocais.length) {
+        const { data, error } = await supabase
+          .from("vendedores_backup")
+          .select("vendedores")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .single();
+        if (data?.vendedores) {
+          vendedoresLocais = data.vendedores;
+          salvarVendedoresLocais(user.id, vendedoresLocais);
+        }
+        if (error) {
+          toast({
+            title: "Erro ao buscar vendedores do Supabase",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
+      }
+
+      setVendedores(vendedoresLocais);
+
+      // Carregar lojas para seleção (ajuste para buscar do localStorage, se necessário)
+      const lojasRaw = localStorage.getItem(`converte:lojas:${user.id}`);
+      let lojasOptions: LojaOption[] = [];
+      if (lojasRaw) {
+        try {
+          lojasOptions = JSON.parse(lojasRaw);
+        } catch {
+          lojasOptions = [];
+        }
+      }
+      setLojas(lojasOptions);
     };
     init();
     // eslint-disable-next-line
   }, []);
 
-  const loadLojasDoUsuario = async (uid: string) => {
-    if (!uid) return;
-    try {
-      const { data, error } = await supabase
-        .from('lojas')
-        .select('id, nome')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
+  // Sincronização automática a cada 30 minutos
+  useEffect(() => {
+    if (!userId || !vendedores.length) return;
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    syncIntervalRef.current = setInterval(() => {
+      sincronizarComBanco(userId, vendedores);
+    }, 30 * 60 * 1000); // 30 minutos
+    return () => {
+      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    };
+  }, [userId, vendedores]);
 
-      if (error) {
-        console.error('Erro carregando lojas:', error);
-        showError(error.message || 'Erro ao carregar lojas');
-        return;
-      }
-      setLojas(data || []);
-    } catch (err) {
-      console.error('Erro inesperado carregando lojas:', err);
-      showError('Erro ao carregar lojas');
+  // Adiciona ou edita um vendedor
+  const salvarVendedor = (vendedor: Vendedor) => {
+    if (!userId) return;
+    let novosVendedores: Vendedor[];
+    if (editingVendedor) {
+      // Editar
+      novosVendedores = vendedores.map((v) => (v.id === vendedor.id ? vendedor : v));
+    } else {
+      // Adicionar
+      novosVendedores = [...vendedores, vendedor];
     }
-  };
-
-  const loadVendedores = async (uid: string) => {
-    if (!uid) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('vendedores')
-        .select('*')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Erro ao carregar vendedores:', error);
-        showError(error.message || 'Erro ao carregar vendedores');
-        return;
-      }
-      setVendedores(data || []);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      nome: '',
-      lojaId: '',
-      email: '',
-      telefone: '',
-      meta: '',
-    });
-    setEditingVendedor(null);
+    setVendedores(novosVendedores);
+    salvarVendedoresLocais(userId, novosVendedores);
+    sincronizarComBanco(userId, novosVendedores); // backup imediato
     setIsDialogOpen(false);
-    setSubmitting(false);
+    setEditingVendedor(null);
   };
 
-  const handleEdit = (vendedor: Vendedor) => {
+  // Exclui um vendedor
+  const excluirVendedor = (id: string) => {
+    if (!userId) return;
+    const novosVendedores = vendedores.filter((v) => v.id !== id);
+    setVendedores(novosVendedores);
+    salvarVendedoresLocais(userId, novosVendedores);
+    sincronizarComBanco(userId, novosVendedores); // backup imediato
+  };
+
+  // Abre o modal para editar
+  const editarVendedor = (vendedor: Vendedor) => {
     setEditingVendedor(vendedor);
-    setFormData({
-      nome: vendedor.nome,
-      lojaId: vendedor.lojaId,
-      email: vendedor.email || '',
-      telefone: vendedor.telefone || '',
-      meta: vendedor.meta != null ? String(vendedor.meta) : '',
-    });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!userId) return;
-    if (!confirm('Tem certeza que deseja excluir este vendedor?')) return;
-    try {
-      const { error } = await supabase
-        .from('vendedores')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', userId);
-      if (error) {
-        console.error('Erro ao excluir vendedor:', error);
-        showError(error.message || 'Erro ao excluir vendedor');
-      } else {
-        showSuccess('Vendedor excluído com sucesso!');
-        await loadVendedores(userId);
-      }
-    } catch (err) {
-      console.error('Erro inesperado ao excluir vendedor:', err);
-      showError('Erro ao excluir vendedor');
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submitting) return;
-    if (!userId) {
-      showError('Usuário não identificado');
-      return;
-    }
-    if (!formData.nome || !formData.lojaId) {
-      showError('Nome e Loja são obrigatórios');
-      return;
-    }
-
-    // Normalizar e validar meta
-    const rawMeta = String(formData.meta || '').trim();
-    const metaValue = rawMeta !== '' ? Number(rawMeta) : 0;
-    if (isNaN(metaValue)) {
-      showError('Meta inválida');
-      return;
-    }
-
-    setSubmitting(true);
-
-    const payload = {
-      nome: formData.nome,
-      lojaId: formData.lojaId,
-      email: formData.email || null,
-      telefone: formData.telefone || null,
-      meta: metaValue,
-      user_id: userId,
-    };
-
-    try {
-      if (editingVendedor) {
-        const { data, error, status } = await supabase
-          .from('vendedores')
-          .update(payload)
-          .eq('id', editingVendedor.id)
-          .eq('user_id', userId);
-        console.log('[DEBUG] update vendedor:', { status, data, error });
-        if (error) {
-          console.error('Erro ao atualizar vendedor:', error);
-          showError(error.message || 'Erro ao atualizar vendedor');
-        } else {
-          showSuccess('Vendedor atualizado com sucesso!');
-          resetForm();
-          await loadVendedores(userId);
-        }
-      } else {
-        const { data, error, status } = await supabase.from('vendedores').insert([payload]);
-        console.log('[DEBUG] insert vendedor:', { status, data, error, payload });
-        if (error) {
-          console.error('Erro ao cadastrar vendedor:', error);
-          showError(error.message || 'Erro ao cadastrar vendedor');
-        } else {
-          showSuccess('Vendedor cadastrado com sucesso!');
-          resetForm();
-          await loadVendedores(userId);
-        }
-      }
-    } finally {
-      setSubmitting(false);
-    }
+  // Abre o modal para adicionar
+  const novoVendedor = () => {
+    setEditingVendedor(null);
+    setIsDialogOpen(true);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#101624]">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              Gerenciar Vendedores
-            </h1>
-            <p className="text-gray-600 mt-2">Cadastre e edite seus vendedores</p>
-          </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="w-4 h-4 mr-2" />
-                Novo Vendedor
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{editingVendedor ? 'Editar Vendedor' : 'Novo Vendedor'}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="nome">Nome *</Label>
-                  <Input
-                    id="nome"
-                    value={formData.nome}
-                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                    placeholder="Nome do vendedor"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="lojaId">Loja *</Label>
-                  <select
-                    id="lojaId"
-                    value={formData.lojaId}
-                    onChange={(e) => setFormData({ ...formData, lojaId: e.target.value })}
-                    className="w-full border rounded px-2 py-2 bg-white dark:bg-[#1E2637] text-gray-900 dark:text-[#F3F4F6]"
-                    required
-                  >
-                    <option value="">Selecione uma loja</option>
-                    {lojas.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="email@exemplo.com"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="telefone">Telefone</Label>
-                  <Input
-                    id="telefone"
-                    value={formData.telefone}
-                    onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                    placeholder="(11) 99999-9999"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="meta">Meta</Label>
-                  <Input
-                    id="meta"
-                    value={formData.meta}
-                    onChange={(e) => setFormData({ ...formData, meta: e.target.value })}
-                    placeholder="Ex: 10"
-                  />
-                </div>
-                {lojas.length === 0 && (
-                  <div className="mb-4 p-3 bg-yellow-100 rounded">
-                    <p className="text-sm">
-                      Você ainda não tem nenhuma loja. Cadastre uma loja antes de adicionar
-                      vendedores.
-                    </p>
-                    <Button onClick={() => navigate('/lojas')}>Cadastrar Loja</Button>
-                  </div>
-                )}
-                <div className="flex justify-end space-x-2">
-                  <Button type="button" variant="outline" onClick={resetForm}>
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={submitting}>
-                    {editingVendedor
-                      ? submitting
-                        ? 'Atualizando...'
-                        : 'Atualizar'
-                      : submitting
-                      ? 'Cadastrando...'
-                      : 'Cadastrar'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista de Vendedores</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {vendedores.length === 0 ? (
-              <div className="text-center py-8">
-                <User className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Nenhum vendedor cadastrado
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  Comece cadastrando seu primeiro vendedor
-                </p>
-                <Button onClick={() => setIsDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Cadastrar
-                </Button>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Loja</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Meta</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {vendedores.map((v) => (
-                    <TableRow key={v.id}>
-                      <TableCell>{v.nome}</TableCell>
-                      <TableCell>{v.lojaId}</TableCell>
-                      <TableCell>{v.email || '-'}</TableCell>
-                      <TableCell>{v.telefone || '-'}</TableCell>
-                      <TableCell>{v.meta != null ? v.meta : '-'}</TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(v)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(v.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Vendedores</h1>
+        <Button onClick={novoVendedor}>Novo Vendedor</Button>
       </div>
+      <ul>
+        {vendedores.map((vendedor) => (
+          <li key={vendedor.id} className="flex justify-between items-center border-b py-2">
+            <span>
+              {vendedor.nome}{" "}
+              <span className="text-xs text-muted-foreground">
+                ({lojas.find((l) => l.id === vendedor.lojaId)?.nome || "Sem loja"})
+              </span>
+            </span>
+            <div>
+              <Button variant="outline" size="sm" onClick={() => editarVendedor(vendedor)}>
+                Editar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="ml-2"
+                onClick={() => excluirVendedor(vendedor.id)}
+              >
+                Excluir
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {/* Modal de adicionar/editar vendedor (exemplo simples, substitua pelo seu dialog/modal) */}
+      {isDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded shadow-lg min-w-[300px]">
+            <h2 className="text-lg font-bold mb-2">
+              {editingVendedor ? "Editar Vendedor" : "Novo Vendedor"}
+            </h2>
+            {/* Formulário simples, ajuste conforme seu modelo */}
+            <input
+              className="border p-2 w-full mb-2"
+              placeholder="Nome do vendedor"
+              value={editingVendedor?.nome ?? ""}
+              onChange={(e) =>
+                setEditingVendedor((prev) =>
+                  prev
+                    ? { ...prev, nome: e.target.value }
+                    : {
+                        id: crypto.randomUUID(),
+                        nome: e.target.value,
+                        lojaId: lojas[0]?.id || "",
+                        user_id: userId!,
+                      }
+                )
+              }
+            />
+            <select
+              className="border p-2 w-full mb-2"
+              value={editingVendedor?.lojaId ?? ""}
+              onChange={(e) =>
+                setEditingVendedor((prev) =>
+                  prev ? { ...prev, lojaId: e.target.value } : prev
+                )
+              }
+            >
+              <option value="">Selecione a loja</option>
+              {lojas.map((loja) => (
+                <option key={loja.id} value={loja.id}>
+                  {loja.nome}
+                </option>
+              ))}
+            </select>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  if (
+                    editingVendedor &&
+                    editingVendedor.nome.trim() &&
+                    editingVendedor.lojaId
+                  ) {
+                    salvarVendedor(editingVendedor);
+                  } else {
+                    toast({
+                      title: "Erro",
+                      description: "Nome e loja obrigatórios.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
