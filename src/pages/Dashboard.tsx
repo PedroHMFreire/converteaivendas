@@ -78,13 +78,13 @@ export default function Dashboard() {
       setLoading(true);
       setErrorMsg(null);
       try {
+        console.log('Chamando RPC calculate_dashboard_data com:', { user_id: uid, inicio, fim });
         // primeira tentativa: RPC Supabase
-        const { data, error } = await supabase
-          .rpc('calculate_dashboard_data', {
-            user_id: uid,
-            inicio,
-            fim,
-          });
+        const { data, error } = await supabase.rpc('calculate_dashboard_data', {
+          user_id: uid,
+          inicio,
+          fim,
+        });
 
         if (error || !data) {
           throw error ?? new Error('Resposta vazia da RPC');
@@ -101,7 +101,10 @@ export default function Dashboard() {
         setDashboardData(parsed as DashboardData);
         setLastUpdated(new Date().toLocaleString('pt-BR'));
       } catch (rpcErr) {
-        console.warn('Erro na RPC, caindo no fallback local:', rpcErr);
+        console.warn('Erro na RPC, caindo no fallback local:', {
+          message: (rpcErr as any)?.message,
+          details: rpcErr,
+        });
         try {
           if (!userId) throw new Error('UserId ausente no fallback');
           const local = await calculateDashboardData(userId, inicio, fim);
@@ -144,11 +147,11 @@ export default function Dashboard() {
     autoTable(doc, {
       head: [['Métrica', 'Valor']],
       body: [
-        ['Conversão Geral', formatPercentage(dashboardData.conversaoGeral)],
-        ['Total de Vendas', String(dashboardData.totalVendas)],
-        ['Total de Atendimentos', String(dashboardData.totalAtendimentos)],
-        ['Ticket Médio', String(dashboardData.ticketMedio)],
-        ['Melhor Loja', String(dashboardData.melhorLoja)],
+        ['Conversão Geral', dashboardData.conversaoGeral != null ? formatPercentage(dashboardData.conversaoGeral) : '-'],
+        ['Total de Vendas', dashboardData.totalVendas != null ? String(dashboardData.totalVendas) : '-'],
+        ['Total de Atendimentos', dashboardData.totalAtendimentos != null ? String(dashboardData.totalAtendimentos) : '-'],
+        ['Ticket Médio', dashboardData.ticketMedio != null ? String(dashboardData.ticketMedio) : '-'],
+        ['Melhor Loja', dashboardData.melhorLoja != null ? String(dashboardData.melhorLoja) : '-'],
         ['Período', `${dataInicio} a ${dataFim}`],
       ],
       headStyles: { fillColor: [33, 150, 243], textColor: [255, 255, 255] },
@@ -244,26 +247,40 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                   <MetricCard
                     title="Conversão Geral"
-                    value={formatPercentage(dashboardData.conversaoGeral)}
-                    subtitle={`${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`}
+                    value={
+                      dashboardData.conversaoGeral != null
+                        ? formatPercentage(dashboardData.conversaoGeral)
+                        : '-'
+                    }
+                    subtitle={
+                      dashboardData.totalVendas != null && dashboardData.totalAtendimentos != null
+                        ? `${dashboardData.totalVendas} vendas de ${dashboardData.totalAtendimentos} atendimentos`
+                        : 'Sem dados'
+                    }
                     icon={TrendingUp}
                     className="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
                   />
                   <MetricCard
                     title="Total de Atendimentos"
-                    value={dashboardData.totalAtendimentos}
+                    value={
+                      dashboardData.totalAtendimentos != null
+                        ? String(dashboardData.totalAtendimentos)
+                        : '-'
+                    }
                     icon={Users}
                     className="bg-gradient-to-r from-green-500 to-green-600 text-white"
                   />
                   <MetricCard
                     title="Ticket Médio"
-                    value={dashboardData.ticketMedio}
+                    value={
+                      dashboardData.ticketMedio != null ? String(dashboardData.ticketMedio) : '-'
+                    }
                     icon={Target}
                     className="bg-gradient-to-r from-yellow-400 to-yellow-500 text-white"
                   />
                   <MetricCard
                     title="Melhor Loja"
-                    value={dashboardData.melhorLoja}
+                    value={dashboardData.melhorLoja != null ? String(dashboardData.melhorLoja) : '-'}
                     icon={Store}
                     className="bg-gradient-to-r from-purple-500 to-purple-600 text-white"
                   />
@@ -275,23 +292,29 @@ export default function Dashboard() {
                       <CardTitle>Distribuição de Conversão</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie
-                            data={dashboardData.conversoesPorCanal}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={60}
-                            label
-                          >
-                            {dashboardData.conversoesPorCanal.map((entry, idx) => (
-                              <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
+                      {Array.isArray(dashboardData.conversoesPorCanal) ? (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <PieChart>
+                            <Pie
+                              data={dashboardData.conversoesPorCanal}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={60}
+                              label
+                            >
+                              {dashboardData.conversoesPorCanal.map((entry, idx) => (
+                                <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                              ))}
+                            </Pie>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="text-center py-6 text-sm text-gray-500">
+                          Sem distribuição de conversão disponível para esse período.
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
