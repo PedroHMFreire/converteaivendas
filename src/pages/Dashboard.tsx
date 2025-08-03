@@ -2,26 +2,50 @@
 
 "use client";
 
-import { useEffect, useState, Suspense, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { formatarPeriodo, getRangeFromFiltro } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FiltrosPeriodo } from "@/components/dashboard/filtros-periodo";
+import { Calendar } from "@/components/ui/calendar";
 import { Chart } from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
+import { subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { supabase } from "@/lib/supabase";
 
 export default function DashboardPage() {
-  const [filtro, setFiltro] = useState("hoje");
+  const [range, setRange] = useState<{
+    from: Date;
+    to: Date;
+  }>({
+    from: subDays(new Date(), 7),
+    to: new Date(),
+  });
+
   const [loading, startTransition] = useTransition();
   const [data, setData] = useState<any>(null);
 
   const fetchData = async () => {
-    const range = getRangeFromFiltro(filtro);
-    const { data, error } = await supabase.rpc("dashboard", {
-      inicio: range.inicio,
-      fim: range.fim,
+    const { from, to } = range;
+    const { data: dashboardData, error } = await supabase.rpc("dashboard", {
+      start_date: from.toISOString(),
+      end_date: to.toISOString(),
     });
+
+    if (error) {
+      toast({
+        title: "Erro ao carregar dados",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      setData(dashboardData);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [range]);
 
     if (error) {
       toast({
