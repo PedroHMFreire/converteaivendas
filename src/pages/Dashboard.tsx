@@ -73,13 +73,67 @@ export default function Dashboard() {
     };
   }, [loadUser]);
 
+  // === substituído: loadDashboardData com cache, refresh e fallback ===
   const loadDashboardData = useCallback(
     async (inicio: string, fim: string, uid: string) => {
       setLoading(true);
       setErrorMsg(null);
       try {
-        console.log('Chamando RPC calculate_dashboard_data com:', { user_id: uid, inicio, fim });
-        // primeira tentativa: RPC Supabase
+        // 1. tenta ler da cache primeiro
+        const { data: cached, error: cacheError } = await supabase
+          .from('dashboard_cache')
+          .select('data, updated_at')
+          .eq('user_id', uid)
+          .eq('periodo_inicio', inicio)
+          .eq('periodo_fim', fim)
+          .single();
+
+        if (cached && (cached as any).data) {
+          setDashboardData((cached as any).data as DashboardData);
+          setLastUpdated(
+            new Date((cached as any).updated_at).toLocaleString('pt-BR') + ' (cache)'
+          );
+          setLoading(false);
+          return;
+        }
+
+        // 2. se não tiver cache, chama refresh para popular
+        console.log('Atualizando cache via refresh_dashboard_cache para:', {
+          user_id: uid,
+          inicio,
+          fim,
+        });
+        await supabase.rpc('refresh_dashboard_cache', {
+          p_user_id: uid,
+          inicio,
+          fim,
+        });
+
+        // 3. lê da cache novamente
+        const { data: cached2 } = await supabase
+          .from('dashboard_cache')
+          .select('data, updated_at')
+          .eq('user_id', uid)
+          .eq('periodo_inicio', inicio)
+          .eq('periodo_fim', fim)
+          .single();
+
+        if (cached2 && (cached2 as any).data) {
+          setDashboardData((cached2 as any).data as DashboardData);
+          setLastUpdated(
+            new Date((cached2 as any).updated_at).toLocaleString('pt-BR') +
+              ' (cache refreshed)'
+          );
+          setLoading(false);
+          return;
+        }
+
+        // 4. fallback para RPC direta
+        console.log('Chamando RPC calculate_dashboard_data com:', {
+          user_id: uid,
+          inicio,
+          fim,
+        });
         const { data, error } = await supabase.rpc('calculate_dashboard_data', {
           user_id: uid,
           inicio,
@@ -100,10 +154,10 @@ export default function Dashboard() {
 
         setDashboardData(parsed as DashboardData);
         setLastUpdated(new Date().toLocaleString('pt-BR'));
-      } catch (rpcErr) {
-        console.warn('Erro na RPC, caindo no fallback local:', {
-          message: (rpcErr as any)?.message,
-          details: rpcErr,
+      } catch (err) {
+        console.warn('Erro no carregamento dos dados, caindo no fallback local:', {
+          message: (err as any)?.message,
+          details: err,
         });
         try {
           if (!userId) throw new Error('UserId ausente no fallback');
@@ -122,6 +176,7 @@ export default function Dashboard() {
     },
     [userId]
   );
+  // === fim da substituição ===
 
   // debounce e evitar fetchs paralelos
   useEffect(() => {
@@ -147,11 +202,30 @@ export default function Dashboard() {
     autoTable(doc, {
       head: [['Métrica', 'Valor']],
       body: [
-        ['Conversão Geral', dashboardData.conversaoGeral != null ? formatPercentage(dashboardData.conversaoGeral) : '-'],
-        ['Total de Vendas', dashboardData.totalVendas != null ? String(dashboardData.totalVendas) : '-'],
-        ['Total de Atendimentos', dashboardData.totalAtendimentos != null ? String(dashboardData.totalAtendimentos) : '-'],
-        ['Ticket Médio', dashboardData.ticketMedio != null ? String(dashboardData.ticketMedio) : '-'],
-        ['Melhor Loja', dashboardData.melhorLoja != null ? String(dashboardData.melhorLoja) : '-'],
+        [
+          'Conversão Geral',
+          dashboardData.conversaoGeral != null
+            ? formatPercentage(dashboardData.conversaoGeral)
+            : '-',
+        ],
+        [
+          'Total de Vendas',
+          dashboardData.totalVendas != null ? String(dashboardData.totalVendas) : '-',
+        ],
+        [
+          'Total de Atendimentos',
+          dashboardData.totalAtendimentos != null
+            ? String(dashboardData.totalAtendimentos)
+            : '-',
+        ],
+        [
+          'Ticket Médio',
+          dashboardData.ticketMedio != null ? String(dashboardData.ticketMedio) : '-',
+        ],
+        [
+          'Melhor Loja',
+          dashboardData.melhorLoja != null ? String(dashboardData.melhorLoja) : '-',
+        ],
         ['Período', `${dataInicio} a ${dataFim}`],
       ],
       headStyles: { fillColor: [33, 150, 243], textColor: [255, 255, 255] },
@@ -242,6 +316,14 @@ export default function Dashboard() {
               </div>
             )}
 
+            {dashboardData && dashboardData.totalAtendimentos === 0 && dashboardData.totalVendas === 0 && (
+              <div className="text-center py-8">
+                <p className="text-gray-500">
+                  Nenhum atendimento ou venda registrado nesse período.
+                </p>
+              </div>
+            )}
+
             {dashboardData && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -292,7 +374,12 @@ export default function Dashboard() {
                       <CardTitle>Distribuição de Conversão</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      {Array.isArray(dashboardData.conversoesPorCanal) ? (
+                      {(!Array.isArray(dashboardData.conversoesPorCanal) ||
+                        dashboardData.conversoesPorCanal.length === 0) ? (
+                        <div className="text-center py-6 text-sm text-gray-500">
+                          Sem distribuição de conversão disponível para esse período.
+                        </div>
+                      ) : (
                         <ResponsiveContainer width="100%" height={200}>
                           <PieChart>
                             <Pie
@@ -310,10 +397,6 @@ export default function Dashboard() {
                             </Pie>
                           </PieChart>
                         </ResponsiveContainer>
-                      ) : (
-                        <div className="text-center py-6 text-sm text-gray-500">
-                          Sem distribuição de conversão disponível para esse período.
-                        </div>
                       )}
                     </CardContent>
                   </Card>
