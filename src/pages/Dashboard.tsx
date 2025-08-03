@@ -1,114 +1,103 @@
-// src/pages/Dashboard.tsx
-
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { useEffect, useState } from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
-import { lazy, Suspense } from "react"
-import { fetchDashboardData, refreshDashboardCache } from "@/lib/dashboard-utils"
-import { Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-
-const PieChart = lazy(() => import("@/components/charts/PieChart"))
-const BarChart = lazy(() => import("@/components/charts/BarChart"))
-const LineChart = lazy(() => import("@/components/charts/LineChart"))
-const DualLineChart = lazy(() => import("@/components/charts/DualLineChart"))
-const RadarChart = lazy(() => import("@/components/charts/RadarChart"))
+import { useEffect, useState, Suspense } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { fetchDashboardData, refreshDashboardCache } from "@/lib/api";
+import { useUser } from "@/lib/auth-context";
+import ConversaoPorDiaChart from "@/ui/charts/conversao-por-dia";
+import ConversaoPorCanalChart from "@/ui/charts/conversao-por-canal";
+import ConversaoPorLojaChart from "@/ui/charts/conversao-por-loja";
 
 export default function DashboardPage() {
-  const [dashboard, setDashboard] = useState<any | null>(null)
-  const [inicio, setInicio] = useState<string>(() => format(new Date(), "yyyy-MM-01"))
-  const [fim, setFim] = useState<string>(() => format(new Date(), "yyyy-MM-dd"))
-  const [loading, setLoading] = useState(true)
-  const [loadingFallback, setLoadingFallback] = useState(false)
+  const { user } = useUser();
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [startDate, setStartDate] = useState("2024-01-01");
+  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState(null);
 
-  const fetchData = async () => {
-    setLoading(true)
+  const loadData = async () => {
+    setLoading(true);
     try {
-      const data = await fetchDashboardData(inicio, fim)
-      setDashboard(data)
-    } catch (error) {
-      console.error("Erro ao buscar dados do dashboard", error)
+      const data = await fetchDashboardData(startDate, endDate);
+      setDashboard(data);
+    } catch (err) {
+      console.error("Erro na RPC, caindo no fallback local:", err);
+      setError("Erro ao carregar os dados. Tente novamente mais tarde.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false)
-  }
-
-  const atualizarDashboard = async () => {
-    setLoadingFallback(true)
-    await refreshDashboardCache(inicio, fim)
-    await fetchData()
-    setLoadingFallback(false)
-  }
+  };
 
   useEffect(() => {
-    fetchData()
-  }, [inicio, fim])
+    loadData();
+  }, [startDate, endDate]);
 
-  if (loading || !dashboard) {
-    return (
-      <div className="flex items-center justify-center h-[400px]">
-        <Loader2 className="animate-spin mr-2 h-6 w-6 text-muted-foreground" /> Carregando dashboard...
-      </div>
-    )
-  }
+  const handleRefresh = async () => {
+    await refreshDashboardCache(startDate, endDate);
+    await loadData();
+  };
+
+  if (loading) return <div className="p-4">Carregando...</div>;
+  if (error) return <div className="p-4 text-red-500">{error}</div>;
 
   return (
-    <div className="p-4 space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Dashboard</h2>
-        <Button onClick={atualizarDashboard} disabled={loadingFallback}>
-          {loadingFallback ? "Atualizando..." : "Atualizar Dados"}
-        </Button>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4">
+      <div className="col-span-1 md:col-span-2 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex gap-2">
+          <label>
+            Início: <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border p-1 rounded" />
+          </label>
+          <label>
+            Fim: <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border p-1 rounded" />
+          </label>
+        </div>
+        <Button onClick={handleRefresh}>Atualizar Indicadores</Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card><CardHeader><CardTitle>Conversão Geral</CardTitle></CardHeader><CardContent>{dashboard.conversaoGeral}%</CardContent></Card>
-        <Card><CardHeader><CardTitle>Atendimentos</CardTitle></CardHeader><CardContent>{dashboard.totalAtendimentos}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Vendas</CardTitle></CardHeader><CardContent>{dashboard.totalVendas}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Ticket Médio</CardTitle></CardHeader><CardContent>R$ {dashboard.ticketMedio.toFixed(2)}</CardContent></Card>
-        <Card><CardHeader><CardTitle>Melhor Loja</CardTitle></CardHeader><CardContent>{dashboard.melhorLoja || "-"}</CardContent></Card>
-      </div>
+      <Card className="col-span-1 md:col-span-2">
+        <CardHeader>
+          <CardTitle>Resumo Geral</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Total de Atendimentos: {dashboard.totalAtendimentos}</p>
+          <p>Total de Vendas: {dashboard.totalVendas}</p>
+          <p>Conversão Geral: {dashboard.conversaoGeral}%</p>
+          <p>Ticket Médio: R$ {dashboard.ticketMedio.toFixed(2)}</p>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="col-span-1 md:col-span-2">
-          <CardHeader><CardTitle>Evolução Semanal da Conversão</CardTitle></CardHeader>
-          <CardContent>
-  <Suspense fallback={<div>Carregando gráfico...</div>}>
-    <LineChart data={dashboard.conversaoPorDia} />
-  </Suspense>
-</CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Evolução Semanal da Conversão</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<div>Carregando gráfico...</div>}>
+            <ConversaoPorDiaChart data={dashboard.conversaoPorDia} />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card className="col-span-1 md:col-span-2">
-          <CardHeader><CardTitle>Atendimentos vs Vendas por Dia</CardTitle></CardHeader>
-          <CardContent><DualLineChart data={dashboard.atendimentosVsVendas} /></CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Conversão por Canal</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<div>Carregando gráfico...</div>}>
+            <ConversaoPorCanalChart data={dashboard.conversoesPorCanal} />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader><CardTitle>Vendas por Vendedor</CardTitle></CardHeader>
-          <CardContent><BarChart data={dashboard.vendasPorVendedor} horizontal /></CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Atendimentos por Vendedor</CardTitle></CardHeader>
-          <CardContent><BarChart data={dashboard.atendimentosPorVendedor} horizontal /></CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Melhor Dia da Semana</CardTitle></CardHeader>
-          <CardContent><RadarChart data={dashboard.diaMaisVendas} /></CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Conversão por Loja</CardTitle></CardHeader>
-          <CardContent><PieChart data={dashboard.conversoesPorCanal} /></CardContent>
-        </Card>
-      </div>
+      <Card className="col-span-1 md:col-span-2">
+        <CardHeader>
+          <CardTitle>Conversão por Loja</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<div>Carregando gráfico...</div>}>
+            <ConversaoPorLojaChart data={dashboard.conversaoPorLoja} />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
-  )
+  );
 }
