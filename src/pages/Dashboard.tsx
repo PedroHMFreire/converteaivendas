@@ -2,15 +2,15 @@
 
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { getRangeFromFiltro } from "@/lib/utils";
+import { useEffect, useState, useTransition, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
-import Chart from "@/components/ui/chart"; // ✅ Corrigido: importação default
+import Chart from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
 import { subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function DashboardPage() {
   const [range, setRange] = useState<{
@@ -26,6 +26,7 @@ export default function DashboardPage() {
 
   const fetchData = async () => {
     const { from, to } = range;
+
     const { data: dashboardData, error } = await supabase.rpc("dashboard", {
       start_date: from.toISOString(),
       end_date: to.toISOString(),
@@ -38,13 +39,13 @@ export default function DashboardPage() {
         variant: "destructive",
       });
     } else {
-      setData(data);
+      setData(dashboardData);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, [filtro]);
+  }, [range]);
 
   const charts = [
     {
@@ -91,23 +92,22 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <span className="text-sm text-muted-foreground">
           {range.from.toLocaleDateString("pt-BR")} - {range.to.toLocaleDateString("pt-BR")}
-          
         </span>
       </div>
 
-     <div className="flex justify-center py-4">
-  <Calendar
-    initialFocus
-    mode="range"
-    selected={range}
-    onSelect={(value) => {
-      if (value?.from && value?.to) {
-        setRange({ from: value.from, to: value.to });
-      }
-    }}
-    locale={ptBR}
-  />
-</div>
+      <div className="flex justify-center py-4">
+        <Calendar
+          initialFocus
+          mode="range"
+          selected={range}
+          onSelect={(value) => {
+            if (value?.from && value?.to) {
+              setRange({ from: value.from, to: value.to });
+            }
+          }}
+          locale={ptBR}
+        />
+      </div>
 
       <Button
         onClick={() => startTransition(fetchData)}
@@ -125,8 +125,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p>
-                Total de Atendimentos:{" "}
-                <strong>{data.totalAtendimentos}</strong>
+                Total de Atendimentos: <strong>{data.totalAtendimentos}</strong>
               </p>
               <p>
                 Total de Vendas: <strong>{data.totalVendas}</strong>
