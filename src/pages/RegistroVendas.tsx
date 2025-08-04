@@ -434,26 +434,27 @@ const RegistroVendas = () => {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-2 md:px-4 py-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+      {/* Header e botões */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
           <TrendingUp className="w-7 h-7 text-blue-500" /> Registro de Vendas
         </h1>
-        <div className="flex gap-2">
-          <Button onClick={novaVenda} className="bg-blue-600 text-white font-bold hover:bg-blue-700">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button onClick={novaVenda} className="bg-blue-600 text-white font-bold hover:bg-blue-700 w-full sm:w-auto">
             <Smile className="w-4 h-4 mr-1" /> Nova Venda
           </Button>
-          <Button variant="outline" onClick={exportarPDF}>
+          <Button variant="outline" onClick={exportarPDF} className="w-full sm:w-auto">
             <Download className="w-4 h-4 mr-1" /> Exportar PDF
           </Button>
         </div>
       </div>
 
       {/* Filtros + Prêmio da semana */}
-      <div className="flex flex-wrap gap-2 mb-6 items-end">
-        <div>
+      <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-6 items-end">
+        <div className="w-full sm:w-auto">
           <label className="block text-xs font-bold mb-1">Loja</label>
           <select
-            className="border rounded p-2 dark:bg-zinc-800 dark:text-white"
+            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
             value={filtroLoja}
             onChange={(e) => {
               setFiltroLoja(e.target.value);
@@ -468,10 +469,10 @@ const RegistroVendas = () => {
             ))}
           </select>
         </div>
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="block text-xs font-bold mb-1">Vendedor</label>
           <select
-            className="border rounded p-2 dark:bg-zinc-800 dark:text-white"
+            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
             value={filtroVendedor}
             onChange={(e) => setFiltroVendedor(e.target.value)}
           >
@@ -483,19 +484,19 @@ const RegistroVendas = () => {
             ))}
           </select>
         </div>
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="block text-xs font-bold mb-1">Data início</label>
           <input
-            className="border rounded p-2 dark:bg-zinc-800 dark:text-white"
+            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
             type="date"
             value={filtroDataInicio}
             onChange={(e) => setFiltroDataInicio(e.target.value)}
           />
         </div>
-        <div>
+        <div className="w-full sm:w-auto">
           <label className="block text-xs font-bold mb-1">Data fim</label>
           <input
-            className="border rounded p-2 dark:bg-zinc-800 dark:text-white"
+            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
             type="date"
             value={filtroDataFim}
             onChange={(e) => setFiltroDataFim(e.target.value)}
@@ -509,27 +510,28 @@ const RegistroVendas = () => {
             setFiltroDataInicio("");
             setFiltroDataFim("");
           }}
+          className="w-full sm:w-auto"
         >
           Limpar Filtros
         </Button>
-        {/* Prêmio da semana ao lado do filtro */}
-        <div className="flex items-end gap-2 ml-auto">
+        {/* Prêmio da semana abaixo dos filtros no mobile */}
+        <div className="flex flex-col w-full sm:w-auto sm:items-end gap-2 sm:ml-auto">
           <div className="flex flex-col">
             <label className="text-xs font-bold mb-1 text-yellow-700 flex items-center gap-1 uppercase">
               <Trophy className="w-4 h-4 text-yellow-600" />
               Prêmio da Semana
             </label>
             <input
-              className="border-2 border-yellow-300 rounded-lg p-2 text-base font-semibold bg-white/80 focus:outline-none focus:ring-2 focus:ring-yellow-300 dark:bg-zinc-900 dark:border-yellow-600"
+              className="border-2 border-yellow-300 rounded-lg p-2 text-base font-semibold bg-white/80 focus:outline-none focus:ring-2 focus:ring-yellow-300 dark:bg-zinc-900 dark:border-yellow-600 w-full"
               placeholder="Ex: Vale-Presente, Dia de Folga..."
               value={premioEdit}
               onChange={handlePremioEdit}
-              style={{ minWidth: 220 }}
+              style={{ minWidth: 0 }}
             />
           </div>
           <Button
             type="button"
-            className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold"
+            className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold w-full sm:w-auto"
             onClick={handleSalvarPremio}
             disabled={!editandoPremio || premioEdit.trim() === ""}
           >
@@ -539,7 +541,7 @@ const RegistroVendas = () => {
       </div>
 
       {/* Indicadores rápidos */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         {[
           {
             label: "Atendimentos",
@@ -569,8 +571,7 @@ const RegistroVendas = () => {
         ].map((card) => (
           <div
             key={card.label}
-            className="rounded-xl shadow p-4 flex flex-col items-center bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800"
-            style={{ minHeight: 100 }}
+            className="rounded-xl shadow p-4 flex flex-col items-center bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 min-h-[90px]"
           >
             <span className="mb-1">{card.icon}</span>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{card.label}</span>
@@ -585,16 +586,16 @@ const RegistroVendas = () => {
           <BarChart3 className="w-5 h-5" /> Ranking de Conversão dos Vendedores
         </h2>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="min-w-full text-xs sm:text-sm">
             <thead>
               <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
-                <th className="px-2 py-1 text-left">#</th>
-                <th className="px-2 py-1 text-left">Vendedor</th>
-                <th className="px-2 py-1 text-left">Loja</th>
-                <th className="px-2 py-1 text-center">Atendimentos</th>
-                <th className="px-2 py-1 text-center">Vendas</th>
-                <th className="px-2 py-1 text-center">Conversão</th>
-                <th className="px-2 py-1 text-center">Alerta</th>
+                <th className="px-1 sm:px-2 py-1 text-left">#</th>
+                <th className="px-1 sm:px-2 py-1 text-left">Vendedor</th>
+                <th className="px-1 sm:px-2 py-1 text-left hidden xs:table-cell">Loja</th>
+                <th className="px-1 sm:px-2 py-1 text-center">Atend.</th>
+                <th className="px-1 sm:px-2 py-1 text-center">Vendas</th>
+                <th className="px-1 sm:px-2 py-1 text-center">Conv.</th>
+                <th className="px-1 sm:px-2 py-1 text-center">Alerta</th>
               </tr>
             </thead>
             <tbody>
@@ -607,13 +608,13 @@ const RegistroVendas = () => {
                       : ""
                   }
                 >
-                  <td className="px-2 py-1">{idx + 1}</td>
-                  <td className="px-2 py-1 font-medium">{v.nome}</td>
-                  <td className="px-2 py-1">{v.lojaNome}</td>
-                  <td className="px-2 py-1 text-center">{v.atendimentos}</td>
-                  <td className="px-2 py-1 text-center">{v.vendas}</td>
-                  <td className="px-2 py-1 text-center">{v.conversao.toFixed(1)}%</td>
-                  <td className="px-2 py-1 text-center">
+                  <td className="px-1 sm:px-2 py-1">{idx + 1}</td>
+                  <td className="px-1 sm:px-2 py-1 font-medium">{v.nome}</td>
+                  <td className="px-1 sm:px-2 py-1 hidden xs:table-cell">{v.lojaNome}</td>
+                  <td className="px-1 sm:px-2 py-1 text-center">{v.atendimentos}</td>
+                  <td className="px-1 sm:px-2 py-1 text-center">{v.vendas}</td>
+                  <td className="px-1 sm:px-2 py-1 text-center">{v.conversao.toFixed(1)}%</td>
+                  <td className="px-1 sm:px-2 py-1 text-center">
                     {v.atendimentos > 0 && v.conversao < mediaConversao && (
                       <span title="Conversão abaixo da média">
                         <AlertTriangle className="w-4 h-4 text-red-500 inline" />
@@ -629,7 +630,7 @@ const RegistroVendas = () => {
           </table>
         </div>
         {vendedoresAbaixoMedia.length > 0 && (
-          <div className="mt-2 text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
+          <div className="mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
             {vendedoresAbaixoMedia.length} vendedor(es) com conversão abaixo da média.
           </div>
@@ -643,7 +644,7 @@ const RegistroVendas = () => {
           <h2 className="text-lg font-bold mb-2 text-green-700 dark:text-green-300 flex items-center gap-2">
             <TrendingUp className="w-5 h-5" /> Evolução de Atendimentos e Vendas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4">
             <Chart
               data={evolucaoPorDia}
               type="bar"
@@ -661,7 +662,7 @@ const RegistroVendas = () => {
           <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
             <BarChart3 className="w-5 h-5" /> Conversão por Lojas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4">
             <Chart
               data={conversaoPorLoja}
               type="bar"
@@ -687,44 +688,48 @@ const RegistroVendas = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border rounded">
+            <table className="min-w-full text-xs sm:text-sm border rounded">
               <thead>
                 <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
-                  <th className="px-2 py-1 text-left">Data</th>
-                  <th className="px-2 py-1 text-left">Vendedor</th>
-                  <th className="px-2 py-1 text-left">Loja</th>
-                  <th className="px-2 py-1 text-center">Atendimentos</th>
-                  <th className="px-2 py-1 text-center">Vendas</th>
-                  <th className="px-2 py-1 text-center">Ações</th>
+                  <th className="px-1 sm:px-2 py-1 text-left">Data</th>
+                  <th className="px-1 sm:px-2 py-1 text-left">Vendedor</th>
+                  <th className="px-1 sm:px-2 py-1 text-left">Loja</th>
+                  <th className="px-1 sm:px-2 py-1 text-center">Atend.</th>
+                  <th className="px-1 sm:px-2 py-1 text-center">Vendas</th>
+                  <th className="px-1 sm:px-2 py-1 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {registrosSemana.map((v) => (
                   <tr key={v.id} className="border-b last:border-b-0">
-                    <td className="px-2 py-1">{dateOnly(v.data).split('-').reverse().join('/')}</td>
-                    <td className="px-2 py-1">{getVendedorNome(v.vendedorId)}</td>
-                    <td className="px-2 py-1">{getLojaNome(v.lojaId)}</td>
-                    <td className="px-2 py-1 text-center">{v.atendimentos}</td>
-                    <td className="px-2 py-1 text-center">{v.vendas}</td>
-                    <td className="px-2 py-1 text-center">
-                      <button
-                        className="inline-flex items-center px-2 py-1 text-xs rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
-                        title="Editar"
-                        onClick={() => editarVenda(v)}
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        className="inline-flex items-center px-2 py-1 text-xs rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900 ml-1"
-                        title="Excluir"
-                        onClick={() => {
-                          if (window.confirm("Tem certeza que deseja excluir este registro?")) {
-                            excluirVenda(v.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <td className="px-1 sm:px-2 py-1">{dateOnly(v.data).split('-').reverse().join('/')}</td>
+                    <td className="px-1 sm:px-2 py-1">{getVendedorNome(v.vendedorId)}</td>
+                    <td className="px-1 sm:px-2 py-1">{getLojaNome(v.lojaId)}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">{v.atendimentos}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">{v.vendas}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">
+                      <div className="flex gap-2 justify-center">
+                        <button
+                          className="inline-flex items-center px-2 py-1 text-xs rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
+                          title="Editar"
+                          aria-label="Editar cadastro"
+                          onClick={() => editarVenda(v)}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          className="inline-flex items-center px-2 py-1 text-xs rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900"
+                          title="Excluir"
+                          aria-label="Excluir cadastro"
+                          onClick={() => {
+                            if (window.confirm("Tem certeza que deseja excluir este registro?")) {
+                              excluirVenda(v.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -738,7 +743,7 @@ const RegistroVendas = () => {
       {/* Modal de adicionar/editar venda */}
       {isDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-zinc-900 p-6 rounded shadow-lg min-w-[320px]">
+          <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded shadow-lg w-full max-w-xs sm:max-w-sm mx-2">
             <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
               <Smile className="w-5 h-5 text-green-500" />
               {editingVenda && editingVenda.id ? "Editar Venda" : "Nova Venda"}
@@ -811,7 +816,7 @@ const RegistroVendas = () => {
                   </option>
                 ))}
               </select>
-              <div className="flex gap-2 mb-2">
+              <div className="flex flex-col sm:flex-row gap-2 mb-2">
                 <input
                   className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
                   type="number"
@@ -832,7 +837,7 @@ const RegistroVendas = () => {
                 />
               </div>
               {editingVenda && editingVenda.atendimentos > 0 && (
-                <div className="mb-2 text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
+                <div className="mb-2 text-xs sm:text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
                   <TrendingUp className="w-4 h-4" />
                   Conversão:{" "}
                   <span className="font-bold">
@@ -844,11 +849,11 @@ const RegistroVendas = () => {
                   </span>
                 </div>
               )}
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setConversaoPreview(null); }}>
+              <div className="flex flex-col sm:flex-row justify-end gap-2">
+                <Button variant="outline" type="button" className="w-full sm:w-auto" onClick={() => { setIsDialogOpen(false); setConversaoPreview(null); }}>
                   Cancelar
                 </Button>
-                <Button type="submit">Salvar</Button>
+                <Button type="submit" className="w-full sm:w-auto">Salvar</Button>
               </div>
             </form>
           </div>
@@ -856,7 +861,7 @@ const RegistroVendas = () => {
       )}
 
       {/* Rodapé */}
-      <footer className="mt-12 py-6 border-t text-center text-xs text-gray-500 dark:text-gray-400">
+      <footer className="mt-8 sm:mt-12 py-6 border-t text-center text-xs text-gray-500 dark:text-gray-400">
         Convertê &copy; {new Date().getFullYear()} &mdash; Performance e resultados com inteligência.
       </footer>
     </div>
