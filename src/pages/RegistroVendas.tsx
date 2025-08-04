@@ -3,7 +3,7 @@ import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { authService } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Download, AlertTriangle, Gift, Trophy, Smile, TrendingUp } from "lucide-react";
+import { BarChart3, Download, AlertTriangle, Gift, Trophy, Smile, TrendingUp, Edit2, Trash2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Chart } from "@/components/ui/chart";
@@ -53,7 +53,7 @@ type Venda = {
   lojaId: string;
   atendimentos: number;
   vendas: number;
-  data: string;
+  data: string; // formato YYYY-MM-DD
   user_id: string;
 };
 
@@ -68,7 +68,29 @@ type Loja = {
   nome: string;
 };
 
-const dateOnly = (d: string) => new Date(d).toISOString().split('T')[0];
+// Função para obter o início da semana (segunda-feira)
+function getStartOfWeek(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // segunda-feira
+  d.setHours(0, 0, 0, 0);
+  return new Date(d.setDate(diff));
+}
+// Função para obter o fim da semana (domingo)
+function getEndOfWeek(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() + (7 - day);
+  d.setHours(23, 59, 59, 999);
+  return new Date(d.setDate(diff));
+}
+
+// Função para garantir que a data está no formato YYYY-MM-DD
+const dateOnly = (d: string) => {
+  if (!d) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  return new Date(d).toISOString().split('T')[0];
+};
 
 function calcularMetrica(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) {
   const porVendedor = vendedores.map((v) => {
@@ -213,14 +235,11 @@ const RegistroVendas = () => {
       ? vendas.filter((v) => v.id !== venda.id)
       : [...vendas];
 
-    for (let i = 0; i < venda.atendimentos; i++) {
-      novasVendas.push({
-        ...venda,
-        id: editingVenda ? venda.id : crypto.randomUUID(),
-        atendimentos: 1,
-        vendas: i < venda.vendas ? 1 : 0,
-      });
-    }
+    novasVendas.push({
+      ...venda,
+      id: editingVenda ? venda.id : crypto.randomUUID(),
+      data: dateOnly(venda.data),
+    });
 
     setVendas(novasVendas);
     salvarVendasLocais(userId, novasVendas);
@@ -315,27 +334,22 @@ const RegistroVendas = () => {
   const mediaConversao = metricas.conversaoGeral;
   const vendedoresAbaixoMedia = ranking.filter((v) => v.conversao < mediaConversao && v.atendimentos > 0);
 
-const evolucaoPorDia = (() => {
-  const dias: { [data: string]: { atendimentos: number; vendas: number } } = {};
+  const evolucaoPorDia = (() => {
+    const dias: { [data: string]: { atendimentos: number; vendas: number } } = {};
 
-  vendasFiltradas.forEach((v) => {
-    // Garantir que a data seja uma string válida
-    const rawData = v.data || "";
-    const dateObj = new Date(rawData);
-    if (isNaN(dateObj.getTime())) return; // ignora se a data for inválida
+    vendasFiltradas.forEach((v) => {
+      const d = dateOnly(v.data);
+      if (!d) return;
+      if (!dias[d]) dias[d] = { atendimentos: 0, vendas: 0 };
+      dias[d].atendimentos += v.atendimentos || 0;
+      dias[d].vendas += v.vendas || 0;
+    });
 
-    const d = dateObj.toISOString().split("T")[0]; // formato yyyy-mm-dd
-
-    if (!dias[d]) dias[d] = { atendimentos: 0, vendas: 0 };
-    dias[d].atendimentos += v.atendimentos || 0;
-    dias[d].vendas += v.vendas || 0;
-  });
-
-  return Object.entries(dias).map(([data, val]) => ({
-    data,
-    ...val,
-  }));
-})();
+    return Object.entries(dias).map(([data, val]) => ({
+      data,
+      ...val,
+    }));
+  })();
 
   // Conversão por loja para o gráfico
   const conversaoPorLoja = metricas.porLoja.map(loja => ({
@@ -392,6 +406,31 @@ const evolucaoPorDia = (() => {
         : null
     );
   };
+
+  // ----------- NOVA FUNCIONALIDADE: Lista de Cadastros da Semana -----------
+
+  // Filtra vendas da semana atual (segunda a domingo) usando comparação de string YYYY-MM-DD
+  const registrosSemana = (() => {
+    const hoje = new Date();
+    const inicioSemana = getStartOfWeek(hoje);
+    const fimSemana = getEndOfWeek(hoje);
+
+    const inicioStr = inicioSemana.toISOString().split('T')[0];
+    const fimStr = fimSemana.toISOString().split('T')[0];
+
+    return vendas
+      .filter((v) => {
+        const data = dateOnly(v.data);
+        return data >= inicioStr && data <= fimStr;
+      })
+      .sort((a, b) => b.data.localeCompare(a.data));
+  })();
+
+  // Utilitário para pegar nome do vendedor e loja
+  const getVendedorNome = (id: string) => vendedores.find(v => v.id === id)?.nome || "-";
+  const getLojaNome = (id: string) => lojas.find(l => l.id === id)?.nome || "-";
+
+  // ------------------------------------------------------------------------
 
   return (
     <div className="w-full max-w-6xl mx-auto px-2 md:px-4 py-8">
@@ -613,6 +652,7 @@ const evolucaoPorDia = (() => {
                 atendimentos: { color: "#6366f1" },
                 vendas: { color: "#10b981" },
               }}
+              xKey="data"
             />
           </div>
         </div>
@@ -635,6 +675,65 @@ const evolucaoPorDia = (() => {
           </div>
         </div>
       </div>
+
+      {/* ----------- NOVA FUNCIONALIDADE: Lista de Cadastros da Semana ----------- */}
+      <div className="mb-10">
+        <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+          <Edit2 className="w-5 h-5" /> Cadastros da Semana (Editáveis)
+        </h2>
+        {registrosSemana.length === 0 ? (
+          <div className="text-gray-500 dark:text-gray-400 text-sm">
+            Nenhum registro cadastrado nesta semana.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm border rounded">
+              <thead>
+                <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
+                  <th className="px-2 py-1 text-left">Data</th>
+                  <th className="px-2 py-1 text-left">Vendedor</th>
+                  <th className="px-2 py-1 text-left">Loja</th>
+                  <th className="px-2 py-1 text-center">Atendimentos</th>
+                  <th className="px-2 py-1 text-center">Vendas</th>
+                  <th className="px-2 py-1 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registrosSemana.map((v) => (
+                  <tr key={v.id} className="border-b last:border-b-0">
+                    <td className="px-2 py-1">{dateOnly(v.data).split('-').reverse().join('/')}</td>
+                    <td className="px-2 py-1">{getVendedorNome(v.vendedorId)}</td>
+                    <td className="px-2 py-1">{getLojaNome(v.lojaId)}</td>
+                    <td className="px-2 py-1 text-center">{v.atendimentos}</td>
+                    <td className="px-2 py-1 text-center">{v.vendas}</td>
+                    <td className="px-2 py-1 text-center">
+                      <button
+                        className="inline-flex items-center px-2 py-1 text-xs rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
+                        title="Editar"
+                        onClick={() => editarVenda(v)}
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        className="inline-flex items-center px-2 py-1 text-xs rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900 ml-1"
+                        title="Excluir"
+                        onClick={() => {
+                          if (window.confirm("Tem certeza que deseja excluir este registro?")) {
+                            excluirVenda(v.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {/* ---------------------------------------------------------------------- */}
 
       {/* Modal de adicionar/editar venda */}
       {isDialogOpen && (
