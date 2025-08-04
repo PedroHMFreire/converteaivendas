@@ -6,41 +6,57 @@ import { Chart } from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { authService } from "@/lib/auth";
-import Header from "@/components/Header";
 import { calculateDashboardData } from "@/lib/dashboard-utils";
+import { useNavigate } from "react-router-dom";
+import { BarChart3, Users, ClipboardList } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-const LOCAL_KEY = "converte:dashboard:";
+function Header() {
+  const navigate = useNavigate();
+  const menu = [
+    {
+      label: "Dashboard",
+      icon: <BarChart3 className="w-5 h-5" />,
+      path: "/dashboard",
+    },
+    {
+      label: "Cadastros",
+      icon: <Users className="w-5 h-5" />,
+      path: "/cadastros",
+    },
+    {
+      label: "Vendas",
+      icon: <ClipboardList className="w-5 h-5" />,
+      path: "/vendas",
+    },
+  ];
 
-function getLocalKey(userId: string) {
-  return `${LOCAL_KEY}${userId}`;
-}
-
-function salvarDadosLocais(userId: string, dados: any) {
-  localStorage.setItem(getLocalKey(userId), JSON.stringify(dados));
-}
-
-function carregarDadosLocais(userId: string) {
-  const raw = localStorage.getItem(getLocalKey(userId));
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-async function sincronizarComBanco(userId: string, dados: any) {
-  try {
-    await supabase
-      .from("dashboard_cache")
-      .upsert([{ user_id: userId, dados, updated_at: new Date().toISOString() }]);
-  } catch (err) {
-    console.error("Erro ao sincronizar com banco:", err);
-  }
+  return (
+    <header className="bg-white shadow-sm border-b dark:bg-gray-900 dark:border-gray-800">
+      <div className="w-full flex justify-between items-center h-16 px-2 md:px-4">
+        <div className="flex items-center">
+          <span className="text-xl font-bold text-gray-900 dark:text-white">Convertê</span>
+        </div>
+        <nav className="flex gap-2">
+          {menu.map((item) => (
+            <Button
+              key={item.path}
+              variant="ghost"
+              className="flex items-center gap-1 px-3 py-2"
+              onClick={() => navigate(item.path)}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Button>
+          ))}
+        </nav>
+      </div>
+    </header>
+  );
 }
 
 export default function DashboardPage() {
-  const [dadosLocais, setDadosLocais] = useState<any>({});
+  const [dashboardData, setDashboardData] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -57,59 +73,39 @@ export default function DashboardPage() {
       }
       setUserId(user.id);
 
-      let dados = carregarDadosLocais(user.id);
-
-      if (!dados) {
-        try {
-          const { data } = await supabase
-            .from("dashboard_cache")
-            .select("dados")
-            .eq("user_id", user.id)
-            .order("updated_at", { ascending: false })
-            .limit(1);
-          if (data?.[0]?.dados) {
-            dados = data[0].dados;
-            salvarDadosLocais(user.id, dados);
-          }
-        } catch (error: any) {
-          toast({
-            title: "Erro ao buscar dados do Supabase",
-            description: error?.message || "Erro desconhecido",
-            variant: "destructive",
-          });
-        }
-      }
-
-      if (user.id) {
-        const dashboardData = calculateDashboardData(
-          user.id,
-          undefined,
-          undefined
-        );
-        setDadosLocais(dashboardData);
-      }
+      // Sempre calcula os dados mais recentes
+      const dashboardData = calculateDashboardData(user.id);
+      setDashboardData(dashboardData);
     };
     init();
     // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
-    if (!userId || !dadosLocais) return;
+    if (!userId || !dashboardData) return;
     if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     syncIntervalRef.current = setInterval(() => {
-      sincronizarComBanco(userId, dadosLocais);
+      // Aqui você pode sincronizar com o banco se quiser
     }, 30 * 60 * 1000);
     return () => {
       if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     };
-  }, [userId, dadosLocais]);
+  }, [userId, dashboardData]);
 
-  const melhorVendedor = dadosLocais?.melhorVendedor ?? "-";
+  if (!dashboardData) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-gray-400">
+        Carregando dados do dashboard...
+      </div>
+    );
+  }
+
+  const melhorVendedor = dashboardData?.melhorVendedor ?? "-";
 
   const indicadores = [
     {
       label: "Atendimentos",
-      value: dadosLocais?.totalAtendimentos ?? 0,
+      value: dashboardData?.totalAtendimentos ?? 0,
       color: "indigo",
       icon: (
         <svg className="w-8 h-8 text-indigo-500 dark:text-indigo-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -119,7 +115,7 @@ export default function DashboardPage() {
     },
     {
       label: "Vendas",
-      value: dadosLocais?.totalVendas ?? 0,
+      value: dashboardData?.totalVendas ?? 0,
       color: "green",
       icon: (
         <svg className="w-8 h-8 text-green-500 dark:text-green-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -129,7 +125,7 @@ export default function DashboardPage() {
     },
     {
       label: "Conversão",
-      value: (dadosLocais?.conversaoGeral ?? 0) + "%",
+      value: (dashboardData?.conversaoGeral ?? 0).toFixed(1) + "%",
       color: "pink",
       icon: (
         <svg className="w-8 h-8 text-pink-500 dark:text-pink-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -147,51 +143,6 @@ export default function DashboardPage() {
           <path d="M12 17.75L18.2 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.44 4.73L5.8 21z" />
         </svg>
       ),
-    },
-  ];
-
-  const charts = [
-    {
-      title: "Atendimentos vs Vendas",
-      dataKey: "atendimentosVendasPorDia",
-      type: "bar",
-      keys: ["atendimentos", "vendas"],
-      color: "#6366f1",
-    },
-    {
-      title: "Vendas por Vendedor",
-      dataKey: "vendasPorVendedor",
-      type: "bar",
-      keys: ["vendas"],
-      color: "#10b981",
-    },
-    {
-      title: "Atendimentos por Vendedor",
-      dataKey: "atendimentosPorVendedor",
-      type: "bar",
-      keys: ["atendimentos"],
-      color: "#f59e42",
-    },
-    {
-      title: "Melhor Dia da Semana",
-      dataKey: "diasDaSemana",
-      type: "bar",
-      keys: ["vendas"],
-      color: "#f43f5e",
-    },
-    {
-      title: "Conversão por Loja",
-      dataKey: "conversaoPorLoja",
-      type: "bar",
-      keys: ["conversao"],
-      color: "#3b82f6",
-    },
-    {
-      title: "Ranking de Conversão por Vendedor",
-      dataKey: "rankingConversao",
-      type: "bar",
-      keys: ["conversao"],
-      color: "#a21caf",
     },
   ];
 
@@ -235,76 +186,198 @@ export default function DashboardPage() {
 
           {/* Gráficos em grid responsivo */}
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-            {charts.map((chart) => {
-              if (
-                !chart ||
-                typeof chart.type !== "string" ||
-                !Array.isArray(chart.keys) ||
-                !chart.keys.length
-              ) {
-                console.warn("Gráfico inválido:", chart);
-                return null;
-              }
-              const chartData = Array.isArray(dadosLocais?.[chart.dataKey])
-                ? dadosLocais[chart.dataKey]
-                : [];
-              if (!Array.isArray(chartData)) {
-                console.warn("Dados inválidos para gráfico:", chart.title, chartData);
-                return null;
-              }
-              return (
-                <Card
-                  key={chart.dataKey}
-                  className={`
-                    bg-gray-50 dark:bg-zinc-800
-                    shadow-md border-0 rounded-xl
-                    p-0
-                    transition
-                  `}
-                  style={{
-                    border: "1.5px solid #e5e7eb",
-                    boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)",
-                  }}
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Atendimentos vs Vendas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
                 >
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
-                      {chart.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0 pb-4">
-                    <div
-                      className={`
-                        rounded-lg
-                        bg-white/80 dark:bg-zinc-900/80
-                        border border-gray-200 dark:border-zinc-700
-                        p-4
-                        min-h-[280px]
-                        flex items-center
-                        transition
-                      `}
-                    >
-                      {chartData.length === 0 ? (
-                        <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
-                          Sem dados para exibir
-                        </div>
-                      ) : (
-                        <Chart
-                          data={chartData}
-                          type={chart.type}
-                          keys={chart.keys}
-                          config={{
-                            [chart.keys[0]]: { color: chart.color },
-                            ...(chart.keys[1]
-                              ? { [chart.keys[1]]: { color: "#eab308" } }
-                              : {}),
-                          }}
-                        />
-                      )}
+                  {dashboardData.atendimentosVendasPorDia.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                  ) : (
+                    <Chart
+                      data={dashboardData.atendimentosVendasPorDia}
+                      type="bar"
+                      keys={["atendimentos", "vendas"]}
+                      config={{
+                        atendimentos: { color: "#6366f1" },
+                        vendas: { color: "#10b981" },
+                      }}
+                      xKey="data"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Vendas por Vendedor
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
+                >
+                  {dashboardData.vendasPorVendedor.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
+                    </div>
+                  ) : (
+                    <Chart
+                      data={dashboardData.vendasPorVendedor}
+                      type="bar"
+                      keys={["vendas"]}
+                      config={{
+                        vendas: { color: "#10b981" },
+                      }}
+                      xKey="vendedor"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Atendimentos por Vendedor
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
+                >
+                  {dashboardData.atendimentosPorVendedor.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
+                    </div>
+                  ) : (
+                    <Chart
+                      data={dashboardData.atendimentosPorVendedor}
+                      type="bar"
+                      keys={["atendimentos"]}
+                      config={{
+                        atendimentos: { color: "#f59e42" },
+                      }}
+                      xKey="vendedor"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Melhor Dia da Semana
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
+                >
+                  {dashboardData.diasDaSemana.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
+                    </div>
+                  ) : (
+                    <Chart
+                      data={dashboardData.diasDaSemana.map((d: any) => ({
+                        ...d,
+                        diaSemana: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][d.dia],
+                      }))}
+                      type="bar"
+                      keys={["conversao"]}
+                      config={{
+                        conversao: { color: "#f43f5e" },
+                      }}
+                      xKey="diaSemana"
+                      yLabel="%"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Conversão por Loja
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
+                >
+                  {dashboardData.conversaoPorLoja.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
+                    </div>
+                  ) : (
+                    <Chart
+                      data={dashboardData.conversaoPorLoja}
+                      type="bar"
+                      keys={["conversao"]}
+                      config={{
+                        conversao: { color: "#3b82f6" },
+                      }}
+                      xKey="loja"
+                      yLabel="%"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-50 dark:bg-zinc-800 shadow-md border-0 rounded-xl p-0 transition"
+              style={{ border: "1.5px solid #e5e7eb", boxShadow: "0 4px 24px 0 rgba(0,0,0,0.04)" }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                  Ranking de Conversão por Vendedor
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 pb-4">
+                <div
+                  className="rounded-lg bg-white/80 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-700 p-4 min-h-[280px] flex items-center transition"
+                  style={{ minWidth: 320, width: "100%" }}
+                >
+                  {dashboardData.rankingConversao.length === 0 ? (
+                    <div className="text-center text-gray-400 py-8 dark:text-gray-500 w-full">
+                      Sem dados para exibir
+                    </div>
+                  ) : (
+                    <Chart
+                      data={dashboardData.rankingConversao}
+                      type="bar"
+                      keys={["conversao"]}
+                      config={{
+                        conversao: { color: "#a21caf" },
+                      }}
+                      xKey="vendedor"
+                      yLabel="%"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>

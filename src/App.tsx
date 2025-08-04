@@ -9,37 +9,36 @@ import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import Lojas from "./pages/Lojas";
-import Vendedores from "./pages/Vendedores";
+import Cadastros from "./pages/Cadastros";
 import RegistroVendas from "./pages/RegistroVendas";
 import Upgrade from "./pages/Upgrade";
 import NotFound from "./pages/NotFound";
 
-// Importe a sidebar (ajuste o caminho se necessário)
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { Sidebar } from "@/components/ui/sidebar";
+// Importe o Header (menu de topo)
+import Header from "@/components/Header";
+// Se quiser rodapé global, importe aqui
+// import Footer from "@/components/Footer";
 
 const queryClient = new QueryClient();
 
-// Componente para rotas internas com sidebar
+// Layout interno com Header (menu de topo)
 function InternalLayout({ children }: { children: React.ReactNode }) {
   return (
-    <SidebarProvider>
-      <div style={{ display: "flex", minHeight: "100vh" }}>
-        <Sidebar />
-        <div style={{ flex: 1 }}>{children}</div>
-      </div>
-    </SidebarProvider>
+    <>
+      <Header />
+      <main style={{ minHeight: "100vh" }}>{children}</main>
+      {/* <Footer /> */}
+    </>
   );
 }
 
 function AppRoutes() {
   const location = useLocation();
-  // Rotas que NÃO devem mostrar a sidebar
-  const hideSidebarRoutes = ["/", "/login", "/register"];
-  const hideSidebar = hideSidebarRoutes.includes(location.pathname);
+  // Rotas que NÃO devem mostrar o Header
+  const hideHeaderRoutes = ["/", "/login", "/register"];
+  const hideHeader = hideHeaderRoutes.includes(location.pathname);
 
-  return hideSidebar ? (
+  return hideHeader ? (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
@@ -50,8 +49,7 @@ function AppRoutes() {
     <InternalLayout>
       <Routes>
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/lojas" element={<Lojas />} />
-        <Route path="/vendedores" element={<Vendedores />} />
+        <Route path="/cadastros" element={<Cadastros />} />
         <Route path="/registro" element={<RegistroVendas />} />
         <Route path="/upgrade" element={<Upgrade />} />
         <Route path="*" element={<NotFound />} />

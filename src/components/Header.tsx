@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   BarChart3,
-  Store,
   Users,
   PlusCircle,
   Menu,
@@ -31,11 +30,11 @@ const Header = () => {
   const user = authService.getCurrentUser();
   const { theme, setTheme } = useTheme();
 
+  // Menu atualizado: apenas Dashboard, Cadastros e Vendas
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
-    { path: '/lojas', label: 'Lojas', icon: Store },
-    { path: '/vendedores', label: 'Vendedores', icon: Users },
-    { path: '/registro', label: 'Registrar Vendas', icon: PlusCircle },
+    { path: '/cadastros', label: 'Cadastros', icon: Users },
+    { path: '/registro', label: 'Vendas', icon: PlusCircle },
   ];
 
   const isActive = (path: string) => location.pathname === path;

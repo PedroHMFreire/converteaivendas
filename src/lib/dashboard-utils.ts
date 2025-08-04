@@ -5,17 +5,10 @@ type Venda = {
   id: string;
   vendedorId: string;
   lojaId: string;
-  valor: number;
+  valor?: number;
   data: string;
   user_id: string;
-};
-
-type Atendimento = {
-  id: string;
-  vendedorId: string;
-  lojaId: string;
-  data: string;
-  user_id: string;
+  vendas: number; // 1 para venda efetivada, 0 para só atendimento
 };
 
 type Loja = {
@@ -40,6 +33,7 @@ export type DashboardData = {
   diasDaSemana: any[];
   conversaoPorLoja: any[];
   rankingConversao: any[];
+  melhorVendedor: string;
 };
 
 // Utilitário para obter a chave localStorage por usuário e entidade
@@ -71,7 +65,7 @@ export async function sincronizarDashboardBackup(userId: string, dashboardData: 
 
 /**
  * Calcula os dados do dashboard: conversão geral, por vendedor, por loja, etc.
- * Agora usando dados locais (offline-first).
+ * Agora usando apenas o array de vendas (cada registro é um atendimento, vendas: 1 indica venda efetivada).
  */
 export const calculateDashboardData = (
   userId: string,
@@ -87,24 +81,28 @@ export const calculateDashboardData = (
   const fim = dataFim || hoje;
 
   // Buscar registros locais do período
-  const vendas: Venda[] = carregarLocais<Venda>("vendas", userId).filter(
+  const vendasRaw: Venda[] = carregarLocais<Venda>("vendas", userId).filter(
     (v) => v.data >= inicio && v.data <= fim
-  );
-  const atendimentos: Atendimento[] = carregarLocais<Atendimento>("atendimentos", userId).filter(
-    (a) => a.data >= inicio && a.data <= fim
   );
   const lojas: Loja[] = carregarLocais<Loja>("lojas", userId);
   const vendedores: Vendedor[] = carregarLocais<Vendedor>("vendedores", userId);
+
+  // Atendimentos: cada registro é um atendimento
+  const atendimentos = vendasRaw;
+  // Vendas: registros onde vendas === 1
+  const vendas = vendasRaw.filter((v) => v.vendas === 1);
 
   // Cálculos principais
   const totalAtendimentos = atendimentos.length;
   const totalVendas = vendas.length;
   const conversaoGeral = totalAtendimentos > 0 ? ((totalVendas / totalAtendimentos) * 100) : 0;
   const ticketMedio =
-    totalVendas > 0 ? vendas.reduce((acc, v) => acc + v.valor, 0) / totalVendas : 0;
+    totalVendas > 0
+      ? vendas.reduce((acc, v) => acc + (v.valor || 0), 0) / totalVendas
+      : 0;
 
   // Atendimentos e vendas por dia
-  const dias = {};
+  const dias: Record<string, { data: string; atendimentos: number; vendas: number }> = {};
   for (const a of atendimentos) {
     if (!dias[a.data]) dias[a.data] = { data: a.data, atendimentos: 0, vendas: 0 };
     dias[a.data].atendimentos++;
@@ -114,28 +112,38 @@ export const calculateDashboardData = (
     dias[v.data].vendas++;
   }
   const atendimentosVendasPorDia = Object.values(dias).sort(
-    (a: any, b: any) => a.data.localeCompare(b.data)
+    (a, b) => a.data.localeCompare(b.data)
   );
 
-  // Vendas por vendedor
+  // Vendas por vendedor (top 6)
   const vendasPorVendedor = vendedores.map((v) => ({
     vendedorId: v.id,
     vendedor: v.nome,
     vendas: vendas.filter((vd) => vd.vendedorId === v.id).length,
-  }));
+  }))
+    .sort((a, b) => b.vendas - a.vendas)
+    .slice(0, 6);
 
-  // Atendimentos por vendedor
+  // Atendimentos por vendedor (top 6)
   const atendimentosPorVendedor = vendedores.map((v) => ({
     vendedorId: v.id,
     vendedor: v.nome,
     atendimentos: atendimentos.filter((a) => a.vendedorId === v.id).length,
-  }));
+  }))
+    .sort((a, b) => b.atendimentos - a.atendimentos)
+    .slice(0, 6);
 
-  // Melhor dia da semana (vendas por dia da semana)
-  const diasDaSemana = [0, 1, 2, 3, 4, 5, 6].map((i) => ({
-    dia: i,
-    vendas: vendas.filter((v) => new Date(v.data).getDay() === i).length,
-  }));
+  // Melhor dia da semana (maior conversão)
+  const diasDaSemana = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+    const at = atendimentos.filter((v) => new Date(v.data).getDay() === i).length;
+    const vd = vendas.filter((v) => new Date(v.data).getDay() === i).length;
+    return {
+      dia: i,
+      conversao: at > 0 ? ((vd / at) * 100) : 0,
+      vendas: vd,
+      atendimentos: at,
+    };
+  });
 
   // Conversão por loja
   const conversaoPorLoja = lojas.map((l) => {
@@ -148,7 +156,7 @@ export const calculateDashboardData = (
     };
   });
 
-  // Ranking de conversão por vendedor
+  // Ranking de conversão por vendedor (top 6)
   const rankingConversao = vendedores.map((v) => {
     const at = atendimentos.filter((a) => a.vendedorId === v.id).length;
     const vd = vendas.filter((venda) => venda.vendedorId === v.id).length;
@@ -157,7 +165,13 @@ export const calculateDashboardData = (
       vendedor: v.nome,
       conversao: at > 0 ? ((vd / at) * 100) : 0,
     };
-  }).sort((a, b) => b.conversao - a.conversao);
+  })
+    .sort((a, b) => b.conversao - a.conversao)
+    .slice(0, 6);
+
+  // Melhor vendedor
+  const melhorVendedorObj = rankingConversao[0];
+  const melhorVendedor = melhorVendedorObj ? melhorVendedorObj.vendedor : "-";
 
   return {
     totalAtendimentos,
@@ -170,10 +184,11 @@ export const calculateDashboardData = (
     diasDaSemana,
     conversaoPorLoja,
     rankingConversao,
+    melhorVendedor,
   };
 };
 
-// Mesmas funções utilitárias (corrigidas)
+// Utilitários
 export const formatPercentage = (value: number): string => {
   if (isNaN(value)) return "0%";
   return `${value.toFixed(1)}%`;
