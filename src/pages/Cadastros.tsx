@@ -210,17 +210,12 @@ export default function Cadastros() {
     // eslint-disable-next-line
   }, []);
 
-  // Sincronização automática a cada 10 minutos
-  useEffect(() => {
-    if (!userId) return;
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    syncIntervalRef.current = setInterval(() => {
-      sincronizarComBanco(userId, lojas, vendedores);
-    }, 10 * 60 * 1000);
-    return () => {
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    };
-  }, [userId, lojas, vendedores]);
+// Sincronizar sempre que lojas ou vendedores forem atualizados
+useEffect(() => {
+  if (userId) {
+    sincronizarComBanco(userId, lojas, vendedores);
+  }
+}, [lojas, vendedores, userId]);
 
   // CRUD Lojas
   const handleAddLoja = () => {

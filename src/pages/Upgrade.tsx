@@ -1,112 +1,68 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Crown, 
-  Check, 
-  Star, 
-  CreditCard,
-  Shield,
-  Zap,
-  Users,
-  Store,
-  BarChart3
-} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '@/lib/auth';
-import { PlanoPreco } from '@/types/auth';
 import { showSuccess } from '@/utils/toast';
 
+import { Button } from '@/components/ui/button';
+import { Check, CreditCard, Shield, BarChart3 } from 'lucide-react';
+
+const recurrenceOptions = [
+  {
+    id: 'mensal',
+    label: 'Mensal',
+    valor: 49.90,
+    economia: null,
+    destaque: null
+  },
+  {
+    id: 'trimestral',
+    label: 'Trimestral',
+    valor: 134.70,
+    economia: '10%',
+    destaque: 'Mais vendido'
+  },
+  {
+    id: 'anual',
+    label: 'Anual',
+    valor: 478.80,
+    economia: '20%',
+    destaque: 'Mais econômico'
+  }
+];
+
 const Upgrade = () => {
-  const [selectedPlan, setSelectedPlan] = useState<string>('');
+  const [selectedRecurrence, setSelectedRecurrence] = useState('mensal');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const user = authService.getCurrentUser();
+  const daysLeft = authService.getTrialDaysLeft();
 
-  const planos: PlanoPreco[] = [
-    {
-      id: 'basic',
-      nome: 'Básico',
-      preco: 97,
-      periodo: 'mensal',
-      maxLojas: 5,
-      maxVendedores: 25,
-      recursos: [
-        'Até 5 lojas',
-        'Até 25 vendedores',
-        'Dashboard completo',
-        'Relatórios básicos',
-        'Suporte por email'
-      ]
-    },
-    {
-      id: 'premium',
-      nome: 'Premium',
-      preco: 197,
-      periodo: 'mensal',
-      maxLojas: 50,
-      maxVendedores: 250,
-      popular: true,
-      recursos: [
-        'Até 50 lojas',
-        'Até 250 vendedores',
-        'Dashboard avançado',
-        'Relatórios completos',
-        'Exportação de dados',
-        'Suporte prioritário',
-        'Treinamento incluído'
-      ]
-    },
-    {
-      id: 'enterprise',
-      nome: 'Enterprise',
-      preco: 397,
-      periodo: 'mensal',
-      maxLojas: 999,
-      maxVendedores: 9999,
-      recursos: [
-        'Lojas ilimitadas',
-        'Vendedores ilimitados',
-        'Dashboard personalizado',
-        'Relatórios avançados',
-        'API personalizada',
-        'Suporte 24/7',
-        'Gerente de conta dedicado',
-        'Integração personalizada'
-      ]
-    }
-  ];
+  const selectedPlan = recurrenceOptions.find(r => r.id === selectedRecurrence);
 
-  const handleSelectPlan = async (planId: string) => {
-    setSelectedPlan(planId);
+  const handleUpgrade = async () => {
     setIsLoading(true);
 
-    // Simulação de processamento de pagamento
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Atualizar usuário com novo plano
     if (user) {
-      const updatedUser = authService.updateProfile({
-        plano: planId as any,
+      authService.updateProfile({
+        plano: selectedRecurrence,
         ativo: true,
-        dataExpiracao: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 dias
+        dataExpiracao: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
-      
-      showSuccess('Plano atualizado com sucesso! Bem-vindo ao Convertê Premium!');
+
+      showSuccess(`Plano ${selectedPlan?.label} ativado com sucesso!`);
       navigate('/dashboard');
     }
 
     setIsLoading(false);
   };
 
-  const daysLeft = authService.getTrialDaysLeft();
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col">
       {/* Header */}
       <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -121,128 +77,91 @@ const Upgrade = () => {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero Section */}
-        <div className="text-center mb-12">
-          <div className="w-16 h-16 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Crown className="w-8 h-8 text-white" />
+      {/* Plano com toggle */}
+      <main className="flex-grow flex items-center justify-center px-4 py-16">
+        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-xl text-center">
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Planos de Pagamento</h1>
+          <p className="text-gray-600 mb-6">Escolha o tipo de pagamento</p>
+
+          {/* Toggle de recorrência */}
+          <div className="flex justify-center space-x-4 mb-6">
+            {recurrenceOptions.map(option => (
+              <button
+                key={option.id}
+                onClick={() => setSelectedRecurrence(option.id)}
+                className={`px-4 py-2 rounded-full border text-sm font-medium transition-all
+                  ${selectedRecurrence === option.id
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}
+                `}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Escolha seu plano
-          </h1>
-          <p className="text-xl text-gray-600 mb-6">
-            Continue aproveitando todos os recursos do Convertê
+
+          {/* Preço e destaque */}
+          <div className="text-4xl font-bold text-blue-600 mb-2">
+            R$ {selectedPlan?.valor.toFixed(2).replace('.', ',')}
+          </div>
+          <p className="text-sm text-gray-500 mb-2">
+            {selectedRecurrence === 'mensal'
+              ? 'por mês'
+              : `equivalente a R$ ${(selectedPlan!.valor / (selectedRecurrence === 'anual' ? 12 : 3)).toFixed(2).replace('.', ',')}/mês`}
           </p>
-          
+
+          {selectedPlan?.destaque && (
+            <span className="inline-block bg-green-100 text-green-800 text-xs px-3 py-1 rounded-full mb-4">
+              {selectedPlan.destaque}
+            </span>
+          )}
+
+          {/* Benefícios */}
+          <ul className="text-left space-y-3 mb-8 mt-6">
+            {[
+              'Até 5 lojas',
+              'Até 25 vendedores',
+              'Dashboard completo',
+              'Relatórios básicos',
+              'Suporte por email e WhatsApp',
+            ].map((item, idx) => (
+              <li key={idx} className="flex items-center text-gray-700">
+                <Check className="w-4 h-4 text-green-500 mr-2" />
+                {item}
+              </li>
+            ))}
+          </ul>
+
+          {/* Botão */}
+          <Button
+            className="w-full"
+            onClick={handleUpgrade}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Processando...' : (
+              <>
+                <CreditCard className="w-4 h-4 mr-2" />
+                Assinar plano {selectedPlan?.label}
+              </>
+            )}
+          </Button>
+
+          {/* Info de teste grátis */}
           {user?.plano === 'trial' && (
-            <div className="inline-flex items-center px-4 py-2 bg-orange-100 text-orange-800 rounded-full">
+            <p className="mt-4 text-sm text-orange-700 bg-orange-100 px-4 py-2 rounded-full inline-flex items-center justify-center">
               <Shield className="w-4 h-4 mr-2" />
-              {daysLeft > 0 ? `${daysLeft} dias restantes no seu teste` : 'Seu teste expirou'}
-            </div>
+              {daysLeft > 0
+                ? `${daysLeft} dias restantes no seu teste gratuito`
+                : 'Seu teste gratuito expirou'}
+            </p>
           )}
         </div>
+      </main>
 
-        {/* Planos */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-          {planos.map((plano) => (
-            <Card 
-              key={plano.id} 
-              className={`relative ${plano.popular ? 'ring-2 ring-blue-500 scale-105' : ''}`}
-            >
-              {plano.popular && (
-                <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <Badge className="bg-blue-500 text-white px-4 py-1">
-                    <Star className="w-3 h-3 mr-1" />
-                    Mais Popular
-                  </Badge>
-                </div>
-              )}
-              
-              <CardHeader className="text-center">
-                <CardTitle className="text-2xl">{plano.nome}</CardTitle>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold">R$ {plano.preco}</span>
-                  <span className="text-gray-600">/{plano.periodo}</span>
-                </div>
-              </CardHeader>
-              
-              <CardContent>
-                <ul className="space-y-3 mb-6">
-                  {plano.recursos.map((recurso, index) => (
-                    <li key={index} className="flex items-center">
-                      <Check className="w-4 h-4 text-green-500 mr-3 flex-shrink-0" />
-                      <span className="text-sm">{recurso}</span>
-                    </li>
-                  ))}
-                </ul>
-                
-                <Button 
-                  className="w-full"
-                  variant={plano.popular ? 'default' : 'outline'}
-                  onClick={() => handleSelectPlan(plano.id)}
-                  disabled={isLoading && selectedPlan === plano.id}
-                >
-                  {isLoading && selectedPlan === plano.id ? (
-                    'Processando...'
-                  ) : (
-                    <>
-                      <CreditCard className="w-4 h-4 mr-2" />
-                      Escolher Plano
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Recursos Inclusos */}
-        <div className="bg-white rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-center mb-8">
-            Todos os planos incluem:
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <BarChart3 className="w-6 h-6 text-blue-600" />
-              </div>
-              <h3 className="font-semibold mb-2">Dashboard Profissional</h3>
-              <p className="text-gray-600 text-sm">
-                Visualizações estilo Power BI com gráficos interativos
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Users className="w-6 h-6 text-green-600" />
-              </div>
-              <h3 className="font-semibold mb-2">Gestão Completa</h3>
-              <p className="text-gray-600 text-sm">
-                Gerencie vendedores, lojas e registros de vendas
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Zap className="w-6 h-6 text-purple-600" />
-              </div>
-              <h3 className="font-semibold mb-2">Relatórios Instantâneos</h3>
-              <p className="text-gray-600 text-sm">
-                Rankings, métricas e análises em tempo real
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Garantia */}
-        <div className="text-center mt-12">
-          <div className="inline-flex items-center px-6 py-3 bg-green-50 text-green-800 rounded-full">
-            <Shield className="w-5 h-5 mr-2" />
-            Garantia de 30 dias - Cancele quando quiser
-          </div>
-        </div>
-      </div>
+      {/* Rodapé */}
+      <footer className="text-center py-6 text-sm text-gray-500">
+        Garantia de 30 dias — Cancele quando quiser
+      </footer>
     </div>
   );
 };

@@ -9,10 +9,7 @@ import { authService } from '@/lib/auth';
 import { showSuccess, showError } from '@/utils/toast';
 
 const Login = () => {
-  const [formData, setFormData] = useState({
-    email: '',
-    senha: ''
-  });
+  const [formData, setFormData] = useState({ email: '', senha: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -20,7 +17,6 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
     try {
       await authService.login(formData);
       showSuccess('Login realizado com sucesso!');
@@ -33,57 +29,63 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-white to-blue-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
+        {/* Logo e Marca */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
             <BarChart3 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Convertê</h1>
-          <p className="text-gray-600">Faça login em sua conta</p>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-1">Converte.Ai</h1>
+          <p className="text-gray-700 text-base italic">Performance e resultados com inteligência</p>
         </div>
 
-        <Card>
+        <Card className="shadow-lg border border-gray-200 bg-white">
           <CardHeader>
-            <CardTitle>Entrar</CardTitle>
+            <CardTitle className="text-center text-xl font-semibold text-gray-800">Acesse sua conta</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="email">E-mail</Label>
+                <Label htmlFor="email" className="text-gray-700">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
                   value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="seu@email.com"
                   required
+                  className="bg-white text-gray-900"
                 />
               </div>
-              
+
               <div>
-                <Label htmlFor="senha">Senha</Label>
+                <Label htmlFor="senha" className="text-gray-700">Senha</Label>
                 <div className="relative">
                   <Input
                     id="senha"
                     type={showPassword ? 'text' : 'password'}
                     value={formData.senha}
-                    onChange={(e) => setFormData({...formData, senha: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
                     placeholder="Sua senha"
                     required
+                    className="bg-white text-gray-900"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                disabled={isLoading}
+              >
                 {isLoading ? 'Entrando...' : 'Entrar'}
               </Button>
             </form>
@@ -93,19 +95,10 @@ const Login = () => {
                 Não tem uma conta?{' '}
                 <button
                   onClick={() => navigate('/register')}
-                  className="text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-blue-600 hover:text-blue-700 font-semibold"
                 >
                   Cadastre-se grátis
                 </button>
-              </p>
-            </div>
-
-            {/* Dados de teste */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h4 className="font-medium text-gray-900 mb-2">Dados para teste:</h4>
-              <p className="text-sm text-gray-600">
-                <strong>E-mail:</strong> demo@converte.com<br />
-                <strong>Senha:</strong> 123456
               </p>
             </div>
           </CardContent>
@@ -114,7 +107,7 @@ const Login = () => {
         <div className="text-center mt-6">
           <button
             onClick={() => navigate('/')}
-            className="text-sm text-gray-600 hover:text-gray-800"
+            className="text-sm text-gray-500 hover:text-gray-700"
           >
             ← Voltar para o site
           </button>

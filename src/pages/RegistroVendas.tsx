@@ -218,15 +218,23 @@ const RegistroVendas = () => {
   }, []);
 
   useEffect(() => {
-    if (!userId || !vendas.length) return;
+  if (!userId || vendas.length === 0) return;
+
+  // Backup imediato sempre que vendas mudarem
+  requestIdleCallback(() => {
+    sincronizarComBanco(userId, vendas);
+  });
+
+  // Backup recorrente a cada 30 minutos
+  if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+  syncIntervalRef.current = setInterval(() => {
+    sincronizarComBanco(userId, vendas);
+  }, 30 * 60 * 1000);
+
+  return () => {
     if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    syncIntervalRef.current = setInterval(() => {
-      sincronizarComBanco(userId, vendas);
-    }, 30 * 60 * 1000);
-    return () => {
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    };
-  }, [userId, vendas]);
+  };
+}, [userId, vendas]);
 
   const salvarVenda = (venda: Venda) => {
     if (!userId) return;

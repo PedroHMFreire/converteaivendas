@@ -9,7 +9,8 @@ import {
   LogOut,
   Settings,
   Sun,
-  Moon
+  Moon,
+  Gift,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authService } from '@/lib/auth';
@@ -17,6 +18,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -30,7 +32,6 @@ const Header = () => {
   const user = authService.getCurrentUser();
   const { theme, setTheme } = useTheme();
 
-  // Menu atualizado: apenas Dashboard, Cadastros e Vendas
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
     { path: '/cadastros', label: 'Cadastros', icon: Users },
@@ -82,7 +83,7 @@ const Header = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <BarChart3 className="w-5 h-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-gray-900 dark:text-white">Convertê</span>
+              <span className="text-xl font-bold text-gray-900 dark:text-white">Converte.Ai</span>
             </button>
           </div>
 
@@ -121,16 +122,20 @@ const Header = () => {
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuContent className="w-64" align="end" forceMount>
                   <div className="flex flex-col space-y-1 p-2">
-                    <p className="text-sm font-medium leading-none">{user.nome || '-'}</p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {user.email || '-'}
-                    </p>
-                    <p className="text-xs leading-none text-muted-foreground">
-                      {user.empresa || '-'}
-                    </p>
+                    <p className="text-sm font-medium leading-none truncate">{user.nome || '-'}</p>
+                    <p className="text-xs leading-none text-muted-foreground truncate">{user.email || '-'}</p>
+                    <p className="text-xs leading-none text-muted-foreground truncate">{user.empresa || '-'}</p>
                   </div>
+
+                  <DropdownMenuLabel className="text-xs text-green-600 font-medium px-4">
+                    Plano: Gratuito
+                  </DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-yellow-600 px-4">
+                    5 dias restantes do seu teste gratuito
+                  </DropdownMenuLabel>
+
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate('/profile')}>
                     <User className="mr-2 h-4 w-4" />
@@ -142,8 +147,8 @@ const Header = () => {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Sair</span>
+                    <LogOut className="mr-2 h-4 w-4 text-red-500" />
+                    <span className="text-red-500">Sair</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

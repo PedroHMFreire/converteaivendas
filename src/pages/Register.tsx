@@ -36,19 +36,19 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-white to-blue-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
+        {/* Logo e Marca */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
             <BarChart3 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Convertê</h1>
-          <p className="text-gray-600">Crie sua conta gratuita</p>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-1">Convertê</h1>
+          <p className="text-gray-700 text-base italic">Crie sua conta para começar</p>
         </div>
 
-        {/* Banner de teste gratuito */}
-        <Card className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
+        {/* Banner do teste gratuito */}
+        <Card className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 shadow">
           <CardContent className="p-4">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -56,88 +56,96 @@ const Register = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-green-900">7 dias grátis</h3>
-                <p className="text-sm text-green-700">
-                  Teste todos os recursos sem compromisso
-                </p>
+                <p className="text-sm text-green-700">Teste todos os recursos sem compromisso</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Formulário de registro */}
+        <Card className="shadow-lg border border-gray-200 bg-white">
           <CardHeader>
-            <CardTitle>Criar Conta</CardTitle>
+            <CardTitle className="text-center text-xl font-semibold text-gray-800">Criar conta</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="nome">Nome Completo</Label>
+                <Label htmlFor="nome" className="text-gray-700">Nome completo</Label>
                 <Input
                   id="nome"
                   value={formData.nome}
-                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
                   placeholder="Seu nome completo"
                   required
+                  className="bg-white text-gray-900"
                 />
               </div>
 
               <div>
-                <Label htmlFor="empresa">Nome da Empresa</Label>
+                <Label htmlFor="empresa" className="text-gray-700">Nome da empresa</Label>
                 <Input
                   id="empresa"
                   value={formData.empresa}
-                  onChange={(e) => setFormData({...formData, empresa: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, empresa: e.target.value })}
                   placeholder="Nome da sua empresa"
                   required
+                  className="bg-white text-gray-900"
                 />
               </div>
 
               <div>
-                <Label htmlFor="email">E-mail</Label>
+                <Label htmlFor="email" className="text-gray-700">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
                   value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="seu@email.com"
                   required
+                  className="bg-white text-gray-900"
                 />
               </div>
 
               <div>
-                <Label htmlFor="telefone">Telefone</Label>
+                <Label htmlFor="telefone" className="text-gray-700">Telefone</Label>
                 <Input
                   id="telefone"
                   value={formData.telefone}
-                  onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
                   placeholder="(11) 99999-9999"
                   required
+                  className="bg-white text-gray-900"
                 />
               </div>
-              
+
               <div>
-                <Label htmlFor="senha">Senha</Label>
+                <Label htmlFor="senha" className="text-gray-700">Senha</Label>
                 <div className="relative">
                   <Input
                     id="senha"
                     type={showPassword ? 'text' : 'password'}
                     value={formData.senha}
-                    onChange={(e) => setFormData({...formData, senha: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
                     placeholder="Crie uma senha"
                     required
                     minLength={6}
+                    className="bg-white text-gray-900"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                disabled={isLoading}
+              >
                 {isLoading ? 'Criando conta...' : 'Começar teste gratuito'}
               </Button>
             </form>
@@ -147,7 +155,7 @@ const Register = () => {
                 Já tem uma conta?{' '}
                 <button
                   onClick={() => navigate('/login')}
-                  className="text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-blue-600 hover:text-blue-700 font-semibold"
                 >
                   Faça login
                 </button>
@@ -159,7 +167,7 @@ const Register = () => {
         <div className="text-center mt-6">
           <button
             onClick={() => navigate('/')}
-            className="text-sm text-gray-600 hover:text-gray-800"
+            className="text-sm text-gray-500 hover:text-gray-700"
           >
             ← Voltar para o site
           </button>
