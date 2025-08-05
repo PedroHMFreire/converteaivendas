@@ -1,12 +1,16 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabaseClient";
 
 export async function fetchDashboardData() {
-  const user = await supabase.auth.getUser();
-  const userId = user.data.user?.id;
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  if (!userId) {
+  if (authError || !user) {
     throw new Error("Usuário não autenticado");
   }
+
+  const userId = user.id;
 
   const inicio = new Date();
   inicio.setDate(inicio.getDate() - 7);

@@ -26,22 +26,20 @@ export type DashboardData = {
   totalAtendimentos: number;
   totalVendas: number;
   conversaoGeral: number;
-  ticketMedio: number;
-  atendimentosVendasPorDia: any[];
-  vendasPorVendedor: any[];
-  atendimentosPorVendedor: any[];
-  diasDaSemana: any[];
-  conversaoPorLoja: any[];
-  rankingConversao: any[];
+  atendimentosVendasPorDia: { data: string; atendimentos: number; vendas: number }[];
+  vendasPorVendedor: { nome: string; vendas: number }[];
+  atendimentosPorVendedor: { nome: string; atendimentos: number }[];
+  diasDaSemana: { dia: string; atendimentos: number; vendas: number }[];
+  conversaoPorLoja: { nome: string; conversao: number }[];
+  rankingConversao: { id: string; nome: string; lojaNome: string; atendimentos: number; vendas: number; conversao: number }[];
   melhorVendedor: string;
+  melhorLoja: string;
 };
 
-// Utilitário para obter a chave localStorage por usuário e entidade
 function getLocalKey(entity: string, userId: string) {
   return `converte:${entity}:${userId}`;
 }
 
-// Função para carregar dados locais de uma entidade
 function carregarLocais<T>(entity: string, userId: string): T[] {
   const raw = localStorage.getItem(getLocalKey(entity, userId));
   if (!raw) return [];
@@ -52,143 +50,153 @@ function carregarLocais<T>(entity: string, userId: string): T[] {
   }
 }
 
-// Função para sincronizar dados locais com Supabase (backup)
-export async function sincronizarDashboardBackup(userId: string, dashboardData: DashboardData) {
+export async function backupLocalData(userId: string | null) {
+  if (!userId) return;
   try {
-    await supabase
-      .from("dashboard_backup")
-      .upsert([{ user_id: userId, dados: dashboardData, updated_at: new Date().toISOString() }]);
+    const lojas = carregarLocais<Loja>("lojas", userId);
+    const vendedores = carregarLocais<Vendedor>("vendedores", userId);
+    const vendas = carregarLocais<Venda>("vendas", userId);
+    const updatedAt = new Date().toISOString();
+
+    const cadastrosPromise = supabase
+      .from("cadastros_backup")
+      .upsert([{ user_id: userId, lojas, vendedores, updated_at: updatedAt }]);
+
+    const vendasPromise = supabase
+      .from("vendas_backup")
+      .upsert([{ user_id: userId, vendas, updated_at: updatedAt }]);
+
+    const [{ error: cadError }, { error: vendasError }] = await Promise.all([
+      cadastrosPromise,
+      vendasPromise,
+    ]);
+
+    if (cadError) throw cadError;
+    if (vendasError) throw vendasError;
   } catch (err) {
-    console.error("Erro ao sincronizar dashboard com banco:", err);
+    console.error("Erro ao realizar backup:", err);
   }
 }
 
-/**
- * Calcula os dados do dashboard: conversão geral, por vendedor, por loja, etc.
- * Agora usando apenas o array de vendas (cada registro é um atendimento, vendas: 1 indica venda efetivada).
- */
 export const calculateDashboardData = (
   userId: string,
   dataInicio?: string,
   dataFim?: string
 ): DashboardData => {
-  const hoje = new Date().toISOString().split('T')[0];
+  const hoje = new Date().toISOString().split("T")[0];
   const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
     .toISOString()
-    .split('T')[0];
+    .split("T")[0];
 
   const inicio = dataInicio || inicioMes;
   const fim = dataFim || hoje;
 
-  // Buscar registros locais do período
   const vendasRaw: Venda[] = carregarLocais<Venda>("vendas", userId).filter(
     (v) => v.data >= inicio && v.data <= fim
   );
   const lojas: Loja[] = carregarLocais<Loja>("lojas", userId);
   const vendedores: Vendedor[] = carregarLocais<Vendedor>("vendedores", userId);
 
-  // Atendimentos: cada registro é um atendimento
-  const atendimentos = vendasRaw;
-  // Vendas: registros onde vendas === 1
-  const vendas = vendasRaw.filter((v) => v.vendas === 1);
+const totalAtendimentos = vendasRaw.reduce((acc, v) => acc + (v.atendimentos || 0), 0);
+const totalVendas = vendasRaw.reduce((acc, v) => acc + (v.vendas || 0), 0);
 
-  // Cálculos principais
-  const totalAtendimentos = atendimentos.length;
-  const totalVendas = vendas.length;
-  const conversaoGeral = totalAtendimentos > 0 ? ((totalVendas / totalAtendimentos) * 100) : 0;
-  const ticketMedio =
-    totalVendas > 0
-      ? vendas.reduce((acc, v) => acc + (v.valor || 0), 0) / totalVendas
-      : 0;
+  const conversaoGeral =
+    totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
 
-  // Atendimentos e vendas por dia
-  const dias: Record<string, { data: string; atendimentos: number; vendas: number }> = {};
-  for (const a of atendimentos) {
-    if (!dias[a.data]) dias[a.data] = { data: a.data, atendimentos: 0, vendas: 0 };
-    dias[a.data].atendimentos++;
-  }
-  for (const v of vendas) {
-    if (!dias[v.data]) dias[v.data] = { data: v.data, atendimentos: 0, vendas: 0 };
-    dias[v.data].vendas++;
-  }
-  const atendimentosVendasPorDia = Object.values(dias).sort(
-    (a, b) => a.data.localeCompare(b.data)
+const dias: Record<string, { data: string; atendimentos: number; vendas: number }> = {};
+for (const v of vendasRaw) {
+  if (!dias[v.data]) dias[v.data] = { data: v.data, atendimentos: 0, vendas: 0 };
+  dias[v.data].atendimentos += v.atendimentos || 0;
+  dias[v.data].vendas += v.vendas || 0;
+}
+
+  const atendimentosVendasPorDia = Object.values(dias).sort((a, b) =>
+    a.data.localeCompare(b.data)
   );
 
-  // Vendas por vendedor (top 6)
-  const vendasPorVendedor = vendedores.map((v) => ({
-    vendedorId: v.id,
-    vendedor: v.nome,
-    vendas: vendas.filter((vd) => vd.vendedorId === v.id).length,
+const vendasPorVendedor = vendedores
+  .map((v) => ({
+    nome: v.nome,
+    vendas: vendasRaw
+      .filter((vd) => vd.vendedorId === v.id)
+      .reduce((acc, vd) => acc + (vd.vendas || 0), 0),
   }))
-    .sort((a, b) => b.vendas - a.vendas)
-    .slice(0, 6);
+  .sort((a, b) => b.vendas - a.vendas)
+  .slice(0, 6);
 
-  // Atendimentos por vendedor (top 6)
-  const atendimentosPorVendedor = vendedores.map((v) => ({
-    vendedorId: v.id,
-    vendedor: v.nome,
-    atendimentos: atendimentos.filter((a) => a.vendedorId === v.id).length,
+const atendimentosPorVendedor = vendedores
+  .map((v) => ({
+    nome: v.nome,
+    atendimentos: vendasRaw
+      .filter((vd) => vd.vendedorId === v.id)
+      .reduce((acc, vd) => acc + (vd.atendimentos || 0), 0),
   }))
-    .sort((a, b) => b.atendimentos - a.atendimentos)
-    .slice(0, 6);
+  .sort((a, b) => b.atendimentos - a.atendimentos)
+  .slice(0, 6);
 
-  // Melhor dia da semana (maior conversão)
   const diasDaSemana = [0, 1, 2, 3, 4, 5, 6].map((i) => {
-    const at = atendimentos.filter((v) => new Date(v.data).getDay() === i).length;
-    const vd = vendas.filter((v) => new Date(v.data).getDay() === i).length;
+  const at = vendasRaw.filter((v) => new Date(v.data).getDay() === i)
+    .reduce((acc, v) => acc + (v.atendimentos || 0), 0);
+  const vd = vendasRaw.filter((v) => new Date(v.data).getDay() === i)
+    .reduce((acc, v) => acc + (v.vendas || 0), 0);
+  return {
+    dia: i,
+    conversao: at > 0 ? (vd / at) * 100 : 0,
+    vendas: vd,
+    atendimentos: at,
+  };
+});
+
+const conversaoPorLoja = lojas.map((l) => {
+  const at = vendasRaw.filter((v) => v.lojaId === l.id)
+    .reduce((acc, v) => acc + (v.atendimentos || 0), 0);
+  const vd = vendasRaw.filter((v) => v.lojaId === l.id)
+    .reduce((acc, v) => acc + (v.vendas || 0), 0);
+  return {
+    nome: l.nome,
+    conversao: at > 0 ? Number(((vd / at) * 100).toFixed(1)) : 0,
+  };
+});
+
+const rankingConversao = vendedores
+  .map((v) => {
+    const at = vendasRaw.filter((vd) => vd.vendedorId === v.id)
+      .reduce((acc, vd) => acc + (vd.atendimentos || 0), 0);
+    const vd = vendasRaw.filter((vd) => vd.vendedorId === v.id)
+      .reduce((acc, vd) => acc + (vd.vendas || 0), 0);
+    const loja = lojas.find((l) => l.id === v.lojaId);
     return {
-      dia: i,
-      conversao: at > 0 ? ((vd / at) * 100) : 0,
-      vendas: vd,
+      id: v.id,
+      nome: v.nome,
+      lojaNome: loja?.nome ?? "-",
       atendimentos: at,
-    };
-  });
-
-  // Conversão por loja
-  const conversaoPorLoja = lojas.map((l) => {
-    const at = atendimentos.filter((a) => a.lojaId === l.id).length;
-    const vd = vendas.filter((v) => v.lojaId === l.id).length;
-    return {
-      lojaId: l.id,
-      loja: l.nome,
-      conversao: at > 0 ? ((vd / at) * 100) : 0,
-    };
-  });
-
-  // Ranking de conversão por vendedor (top 6)
-  const rankingConversao = vendedores.map((v) => {
-    const at = atendimentos.filter((a) => a.vendedorId === v.id).length;
-    const vd = vendas.filter((venda) => venda.vendedorId === v.id).length;
-    return {
-      vendedorId: v.id,
-      vendedor: v.nome,
-      conversao: at > 0 ? ((vd / at) * 100) : 0,
+      vendas: vd,
+      conversao: at > 0 ? (vd / at) * 100 : 0,
     };
   })
-    .sort((a, b) => b.conversao - a.conversao)
-    .slice(0, 6);
+  .sort((a, b) => b.conversao - a.conversao)
+  .slice(0, 6);
 
-  // Melhor vendedor
-  const melhorVendedorObj = rankingConversao[0];
-  const melhorVendedor = melhorVendedorObj ? melhorVendedorObj.vendedor : "-";
+const melhorVendedor = rankingConversao.length > 0 ? rankingConversao[0].nome : "-";
 
-  return {
-    totalAtendimentos,
-    totalVendas,
-    conversaoGeral,
-    ticketMedio,
-    atendimentosVendasPorDia,
-    vendasPorVendedor,
-    atendimentosPorVendedor,
-    diasDaSemana,
-    conversaoPorLoja,
-    rankingConversao,
-    melhorVendedor,
-  };
+const melhorLojaOrdenada = [...conversaoPorLoja].sort((a, b) => b.conversao - a.conversao);
+const melhorLoja = melhorLojaOrdenada.length > 0 ? melhorLojaOrdenada[0].nome : "-";
+
+return {
+  totalAtendimentos,
+  totalVendas,
+  conversaoGeral,
+  atendimentosVendasPorDia,
+  vendasPorVendedor,
+  atendimentosPorVendedor,
+  diasDaSemana,
+  conversaoPorLoja,
+  rankingConversao,
+  melhorVendedor,
+  melhorLoja,
+};
 };
 
-// Utilitários
 export const formatPercentage = (value: number): string => {
   if (isNaN(value)) return "0%";
   return `${value.toFixed(1)}%`;
