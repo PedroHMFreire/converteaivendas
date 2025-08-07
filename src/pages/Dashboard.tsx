@@ -13,26 +13,39 @@ export default function DashboardPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const user = await authService.getCurrentUser();
-      if (!user?.id) {
-        toast({
-          title: "Erro",
-          description: "Usuário não autenticado.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setUserId(user.id);
+useEffect(() => {
+  const fetchData = async () => {
+    const user = await authService.getCurrentUser();
+    if (!user?.id) {
+      toast({
+        title: "Erro",
+        description: "Usuário não autenticado.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // Buscar vendas do localStorage
-  const dashboard = calculateDashboardData(user.id);
-setDashboardData(dashboard);
-    };
+    // NOVA CHECAGEM DE TRIAL
+    const expired = await authService.isTrialExpired();
+    if (expired) {
+      toast({
+        title: "Período de teste expirado",
+        description: "Seu período de teste terminou. Faça o upgrade para continuar.",
+        variant: "destructive",
+      });
+      window.location.href = "/upgrade"; // ou a rota de upgrade do seu sistema
+      return;
+    }
 
-    fetchData();
-  }, []);
+    setUserId(user.id);
+
+    // Buscar vendas do localStorage
+    const dashboard = calculateDashboardData(user.id);
+    setDashboardData(dashboard);
+  };
+
+  fetchData();
+}, []);
 
   useEffect(() => {
     if (!userId || !dashboardData) return;
