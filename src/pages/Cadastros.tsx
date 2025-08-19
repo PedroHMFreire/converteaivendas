@@ -163,7 +163,7 @@ export default function Cadastros() {
   const [userId, setUserId] = useState<string | null>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Carregar dados ao abrir
+  // Carregar dados ao abrir - sempre restaurar do Supabase ao logar
   useEffect(() => {
     const init = async () => {
       const user = await authService.getCurrentUser();
@@ -177,32 +177,33 @@ export default function Cadastros() {
       }
       setUserId(user.id);
 
-      let lojasLocais = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
-      let vendedoresLocais = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
-
-      if (!lojasLocais.length || !vendedoresLocais.length) {
-        const { data, error } = await supabase
-          .from("cadastros_backup")
-          .select("lojas, vendedores")
-          .eq("user_id", user.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .single();
-        if (data) {
-          lojasLocais = data.lojas || [];
-          vendedoresLocais = data.vendedores || [];
-          salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasLocais);
-          salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresLocais);
-        }
-        if (error) {
-          toast({
-            title: "Erro ao buscar cadastros do Supabase",
-            description: error.message,
-            variant: "destructive",
-          });
-        }
+      // Sempre buscar do Supabase ao logar
+      const { data, error } = await supabase
+        .from("cadastros_backup")
+        .select("lojas, vendedores")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single();
+      let lojasLocais: Loja[] = [];
+      let vendedoresLocais: Vendedor[] = [];
+      if (data) {
+        lojasLocais = data.lojas || [];
+        vendedoresLocais = data.vendedores || [];
+        salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasLocais);
+        salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresLocais);
+      } else {
+        // Se não houver dados no Supabase, tenta restaurar do localStorage
+        lojasLocais = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
+        vendedoresLocais = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
       }
-
+      if (error) {
+        toast({
+          title: "Erro ao buscar cadastros do Supabase",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
       setLojas(lojasLocais);
       setVendedores(vendedoresLocais);
     };
