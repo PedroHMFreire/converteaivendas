@@ -798,24 +798,36 @@ const RegistroVendas = () => {
                 ))}
               </select>
               <div className="flex flex-col sm:flex-row gap-2 mb-2">
-                <input
-                  className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
-                  type="number"
-                  min={0}
-                  placeholder="Atendimentos"
-                  value={editingVenda?.atendimentos ?? ""}
-                  onChange={(e) => handleAtendimentosChange(Number(e.target.value))}
-                  required
-                />
-                <input
-                  className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
-                  type="number"
-                  min={0}
-                  placeholder="Vendas"
-                  value={editingVenda?.vendas ?? ""}
-                  onChange={(e) => handleVendasChange(Number(e.target.value))}
-                  required
-                />
+                <div className="flex flex-col w-full">
+                  <label className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">Atendimentos</label>
+                  <input
+                    className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
+                    type="number"
+                    min={0}
+                    placeholder="Digite o número de atendimentos"
+                    value={editingVenda?.atendimentos === 0 || editingVenda?.atendimentos === undefined ? "" : editingVenda?.atendimentos}
+                    onChange={e => {
+                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                      handleAtendimentosChange(val);
+                    }}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col w-full">
+                  <label className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">Vendas</label>
+                  <input
+                    className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
+                    type="number"
+                    min={0}
+                    placeholder="Digite o número de vendas"
+                    value={editingVenda?.vendas === 0 || editingVenda?.vendas === undefined ? "" : editingVenda?.vendas}
+                    onChange={e => {
+                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                      handleVendasChange(val);
+                    }}
+                    required
+                  />
+                </div>
               </div>
               {editingVenda && editingVenda.atendimentos > 0 && (
                 <div className="mb-2 text-xs sm:text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
