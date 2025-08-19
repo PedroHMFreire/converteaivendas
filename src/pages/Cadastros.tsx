@@ -33,7 +33,13 @@ function carregarLocais<T>(base: string, userId: string): T[] {
 // Supabase backup
 async function sincronizarComBanco(userId: string, lojas: Loja[], vendedores: Vendedor[]) {
   try {
-    await supabase
+    console.log("[SUPABASE] Salvando dados:", {
+      user_id: userId,
+      lojas,
+      vendedores,
+      updated_at: new Date().toISOString(),
+    });
+    const { data, error } = await supabase
       .from("cadastros_backup")
       .upsert([
         {
@@ -43,6 +49,11 @@ async function sincronizarComBanco(userId: string, lojas: Loja[], vendedores: Ve
           updated_at: new Date().toISOString(),
         },
       ]);
+    if (error) {
+      console.error("[SUPABASE] Erro ao salvar:", error);
+    } else {
+      console.log("[SUPABASE] Dados salvos com sucesso:", data);
+    }
   } catch (err) {
     console.error("Erro ao sincronizar com banco:", err);
   }
@@ -185,27 +196,41 @@ export default function Cadastros() {
         .order("updated_at", { ascending: false })
         .limit(1)
         .single();
-      let lojasLocais: Loja[] = [];
-      let vendedoresLocais: Vendedor[] = [];
-      if (data) {
-        lojasLocais = data.lojas || [];
-        vendedoresLocais = data.vendedores || [];
-        salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasLocais);
-        salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresLocais);
+      console.log("[SUPABASE] Dados lidos:", data);
+      let lojasLocais: Loja[] = lojas;
+      let vendedoresLocais: Vendedor[] = vendedores;
+      if (data && Array.isArray(data.lojas) && Array.isArray(data.vendedores)) {
+        // Só atualiza se o Supabase retornar dados válidos (não vazios)
+        if (data.lojas.length > 0 || data.vendedores.length > 0) {
+          lojasLocais = data.lojas;
+          vendedoresLocais = data.vendedores;
+          salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasLocais);
+          salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresLocais);
+          setLojas(lojasLocais);
+          setVendedores(vendedoresLocais);
+        } else {
+          // Se o Supabase retornar arrays vazios, mantém o estado atual
+          console.warn("[SUPABASE] Dados do banco estão vazios, mantendo estado atual.");
+        }
       } else {
         // Se não houver dados no Supabase, tenta restaurar do localStorage
-        lojasLocais = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
-        vendedoresLocais = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
+        const lojasLocalStorage = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
+        const vendedoresLocalStorage = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
+        if (lojasLocalStorage.length > 0 || vendedoresLocalStorage.length > 0) {
+          lojasLocais = lojasLocalStorage;
+          vendedoresLocais = vendedoresLocalStorage;
+          setLojas(lojasLocais);
+          setVendedores(vendedoresLocais);
+        }
       }
       if (error) {
+        console.error("[SUPABASE] Erro ao ler:", error);
         toast({
           title: "Erro ao buscar cadastros do Supabase",
           description: error.message,
           variant: "destructive",
         });
       }
-      setLojas(lojasLocais);
-      setVendedores(vendedoresLocais);
     };
     init();
     // eslint-disable-next-line
@@ -213,8 +238,11 @@ export default function Cadastros() {
 
 // Sincronizar sempre que lojas ou vendedores forem atualizados
 useEffect(() => {
-  if (userId) {
+  if (userId && (lojas.length > 0 || vendedores.length > 0)) {
     sincronizarComBanco(userId, lojas, vendedores);
+  } else {
+    // Não sincroniza se ambos estiverem vazios
+    console.warn("[SUPABASE] Não sincroniza: lojas e vendedores estão vazios.");
   }
 }, [lojas, vendedores, userId]);
 
