@@ -159,8 +159,7 @@ const RegistroVendas = () => {
       if (!user?.id) {
         toast({
           title: "Erro",
-          description: "Usuário não autenticado.",
-          variant: "destructive",
+          description: "Usuário não autenticado."
         });
         return;
       }
@@ -182,8 +181,7 @@ const RegistroVendas = () => {
         if (error) {
           toast({
             title: "Erro ao buscar vendas do Supabase",
-            description: error.message,
-            variant: "destructive",
+            description: error.message
           });
         }
       }
@@ -257,8 +255,7 @@ const RegistroVendas = () => {
     setConversaoPreview(null);
     toast({
       title: "Venda registrada!",
-      description: `Conversão: ${((venda.vendas / (venda.atendimentos || 1)) * 100).toFixed(1)}%`,
-      variant: "success",
+      description: `Conversão: ${((venda.vendas / (venda.atendimentos || 1)) * 100).toFixed(1)}%`
     });
   };
 
@@ -285,7 +282,7 @@ const RegistroVendas = () => {
       lojaId: "",
       atendimentos: 0,
       vendas: 0,
-      data: dateOnly(new Date().toISOString()),
+      data: "", // Deixa vazio para o usuário escolher
       user_id: userId!,
     });
     setIsDialogOpen(true);
@@ -376,8 +373,7 @@ const RegistroVendas = () => {
     setEditandoPremio(false);
     toast({
       title: "Prêmio da semana salvo!",
-      description: premioEdit,
-      variant: "success",
+      description: premioEdit
     });
   };
 
@@ -415,24 +411,11 @@ const RegistroVendas = () => {
     );
   };
 
-  // ----------- NOVA FUNCIONALIDADE: Lista de Cadastros da Semana -----------
-
-  // Filtra vendas da semana atual (segunda a domingo) usando comparação de string YYYY-MM-DD
-  const registrosSemana = (() => {
-    const hoje = new Date();
-    const inicioSemana = getStartOfWeek(hoje);
-    const fimSemana = getEndOfWeek(hoje);
-
-    const inicioStr = inicioSemana.toISOString().split('T')[0];
-    const fimStr = fimSemana.toISOString().split('T')[0];
-
-    return vendas
-      .filter((v) => {
-        const data = dateOnly(v.data);
-        return data >= inicioStr && data <= fimStr;
-      })
-      .sort((a, b) => b.data.localeCompare(a.data));
-  })();
+  // ----------- NOVA FUNCIONALIDADE: Lista dos 30 Cadastros mais recentes -----------
+  const registrosSemana = vendas
+    .slice()
+    .sort((a, b) => b.data.localeCompare(a.data))
+    .slice(0, 30);
 
   // Utilitário para pegar nome do vendedor e loja
   const getVendedorNome = (id: string) => vendedores.find(v => v.id === id)?.nome || "-";
@@ -648,11 +631,11 @@ const RegistroVendas = () => {
       {/* Gráficos lado a lado */}
       <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Gráfico de evolução */}
-        <div>
+        <div className="w-full max-w-full overflow-x-auto">
           <h2 className="text-lg font-bold mb-2 text-green-700 dark:text-green-300 flex items-center gap-2">
             <TrendingUp className="w-5 h-5" /> Evolução de Atendimentos e Vendas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full" style={{ minWidth: 0 }}>
             <Chart
               data={evolucaoPorDia}
               type="bar"
@@ -666,11 +649,11 @@ const RegistroVendas = () => {
           </div>
         </div>
         {/* Gráfico de conversão por loja */}
-        <div>
+        <div className="w-full max-w-full overflow-x-auto">
           <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
             <BarChart3 className="w-5 h-5" /> Conversão por Lojas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full" style={{ minWidth: 0 }}>
             <Chart
               data={conversaoPorLoja}
               type="bar"
@@ -771,8 +754,7 @@ const RegistroVendas = () => {
                 } else {
                   toast({
                     title: "Erro",
-                    description: "Preencha todos os campos obrigatórios.",
-                    variant: "destructive",
+                    description: "Preencha todos os campos obrigatórios."
                   });
                 }
               }}
@@ -780,23 +762,14 @@ const RegistroVendas = () => {
               <input
                 className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
                 type="date"
-                value={editingVenda?.data ? dateOnly(editingVenda.data) : dateOnly(new Date().toISOString())}
+                value={editingVenda?.data ? dateOnly(editingVenda.data) : ""}
                 onChange={(e) =>
                   setEditingVenda((prev) =>
-                    prev
-                      ? { ...prev, data: e.target.value }
-                      : {
-                          id: crypto.randomUUID(),
-                          vendedorId: vendedores[0]?.id || "",
-                          lojaId: lojas[0]?.id || "",
-                          atendimentos: 0,
-                          vendas: 0,
-                          data: e.target.value,
-                          user_id: userId!,
-                        }
+                    prev ? { ...prev, data: e.target.value } : prev
                   )
                 }
                 required
+                placeholder="Selecione a data do atendimento"
               />
               <select
                 className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
