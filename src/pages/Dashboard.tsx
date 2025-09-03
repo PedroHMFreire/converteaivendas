@@ -4,159 +4,231 @@ import { useEffect, useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Chart } from "@/components/ui/chart";
 import { toast } from "@/components/ui/use-toast";
-import { authService } from "@/lib/auth";
-import { calculateDashboardData } from "@/lib/dashboard-utils";
-import { BarChart3, Users, Gift, Trophy, TrendingUp, Smile } from "lucide-react";
+import { calculateDashboardData, dateOnly } from "@/lib/dashboard-utils";
+import { supabase } from "@/lib/supabaseClient";
+import { BarChart3, Gift, Trophy, TrendingUp, Smile, Bug } from "lucide-react";
+
+type Venda = {
+  id: string;
+  vendedorId: string;
+  lojaId: string;
+  valor?: number;
+  data: string;
+  user_id: string;
+  vendas: number;
+  atendimentos: number;
+};
+
+function normalizeRegistro(r: any): Venda {
+  return {
+    id: r.id ?? r.uuid ?? crypto.randomUUID(),
+    vendedorId: r.vendedorId ?? r.vendedor_id ?? r.sellerId ?? r.seller_id ?? "",
+    lojaId: r.lojaId ?? r.loja_id ?? r.storeId ?? r.store_id ?? "",
+    valor: Number(r.valor ?? r.value ?? r.amount ?? 0) || 0,
+    data: dateOnly(r.data ?? r.date ?? r.created_at ?? new Date().toISOString()),
+    user_id: r.user_id ?? r.userId ?? "",
+    vendas: Number(r.vendas ?? r.venda ?? r.sales ?? 0) || 0,
+    atendimentos: Number(r.atendimentos ?? r.atend ?? r.contacts ?? r.atendimentos_count ?? 0) || 0,
+  };
+}
 
 export default function DashboardPage() {
   const [dashboardData, setDashboardData] = useState<any>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-useEffect(() => {
-  const fetchData = async () => {
-    const user = await authService.getCurrentUser();
-    if (!user?.id) {
-      toast({
-        title: "Erro",
-        description: "Usuário não autenticado.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // NOVA CHECAGEM DE TRIAL
-    const expired = await authService.isTrialExpired();
-    if (expired) {
-      toast({
-        title: "Período de teste expirado",
-        description: "Seu período de teste terminou. Faça o upgrade para continuar.",
-        variant: "destructive",
-      });
-      window.location.href = "/upgrade"; // ou a rota de upgrade do seu sistema
-      return;
-    }
-
-    setUserId(user.id);
-
-    // Buscar vendas do localStorage
-    const dashboard = calculateDashboardData(user.id);
-    setDashboardData(dashboard);
-  };
-
-  fetchData();
-}, []);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const refreshRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (!userId || !dashboardData) return;
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-    syncIntervalRef.current = setInterval(() => {
-      // ...sincronizar dados se necessário...
-    }, 30 * 60 * 1000);
-    return () => {
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    const fetchData = async () => {
+      try {
+        const { data: userResp, error: authErr } = await supabase.auth.getUser();
+        if (authErr || !userResp?.user) {
+          toast({ title: "Você precisa estar logado." });
+          return;
+        }
+        const userId = userResp.user.id;
+
+        // 1) registros
+        let vendas: Venda[] = [];
+        let regsErrorMsg: string | null = null;
+        try {
+          const { data: regs, error: regsError } = await supabase
+            .from("registros")
+            .select("*")
+            .eq("user_id", userId);
+          if (regsError) regsErrorMsg = regsError.message;
+          if (Array.isArray(regs) && regs.length) vendas = regs.map(normalizeRegistro);
+        } catch (e: any) { regsErrorMsg = String(e); }
+
+        // 2) fallback vendas_backup
+        let vendasFromBackup = 0;
+        if (!vendas.length) {
+          try {
+            const { data, error } = await supabase
+              .from("vendas_backup")
+              .select("vendas")
+              .eq("user_id", userId)
+              .order("updated_at", { ascending: false })
+              .limit(1)
+              .single();
+            if (!error && data?.vendas?.length) {
+              vendas = (data.vendas as any[]).map(normalizeRegistro);
+              vendasFromBackup = vendas.length;
+            }
+          } catch {}
+        }
+
+        // 3) fallback localStorage
+        let vendasFromLocal = 0;
+        if (!vendas.length) {
+          try {
+            const raw = localStorage.getItem(`converte:vendas:${userId}`);
+            if (raw) {
+              const arr = JSON.parse(raw) as any[];
+              vendas = arr.map(normalizeRegistro);
+              vendasFromLocal = vendas.length;
+            }
+          } catch {}
+        }
+
+        // 4) cadastros
+        let lojas: any[] = [];
+        let vendedores: any[] = [];
+        let cadMsg: string | null = null;
+        try {
+          const { data: cad, error: cadErr } = await supabase
+            .from("cadastros")
+            .select("lojas, vendedores")
+            .eq("user_id", userId)
+            .limit(1)
+            .single();
+          if (cad) {
+            lojas = cad.lojas || [];
+            vendedores = cad.vendedores || [];
+          }
+          if (cadErr) cadMsg = cadErr.message;
+        } catch (e) {
+          cadMsg = String(e);
+        }
+
+        // 5) montar debug
+        const dbg = {
+          userId,
+          totalRegistros: vendas.length,
+          vendedoresCount: vendedores.length,
+          lojasCount: lojas.length,
+          sample: vendas.slice(0, 3),
+          regsErrorMsg,
+          cadMsg,
+          vendasFromBackup,
+          vendasFromLocal,
+        };
+        setDebugInfo(dbg);
+        console.log("[Dashboard] debug", dbg);
+
+        // 6) calcular com data ampla
+        const data = calculateDashboardData(
+          userId,
+          "1970-01-01",
+          dateOnly(new Date().toISOString()),
+          vendas,
+          lojas,
+          vendedores
+        );
+        setDashboardData(data);
+
+        if (!vendas.length) {
+          toast({
+            title: "Sem dados para exibir",
+            description: "Não encontrei registros em 'registros', nem em 'vendas_backup' e nem no localStorage. Verifique se o Registro de Vendas está salvando (tabela 'registros') e se o user_id bate com o usuário logado.",
+          });
+        }
+      } catch (e: any) {
+        toast({ title: "Erro ao carregar dashboard", description: String(e), variant: "destructive" });
+      }
     };
-  }, [userId, dashboardData]);
+    fetchData();
+
+    if (refreshRef.current) clearInterval(refreshRef.current);
+    refreshRef.current = setInterval(fetchData, 60_000);
+    return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
+  }, []);
 
   if (!dashboardData) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <span className="text-blue-700 dark:text-blue-300 text-lg font-bold">Carregando...</span>
-      </div>
-    );
+    return <div className="p-4 text-sm text-gray-600 dark:text-gray-300">Carregando...</div>;
   }
 
   const {
-    melhorVendedor,
     totalAtendimentos,
     totalVendas,
     conversaoGeral,
     atendimentosVendasPorDia,
     conversaoPorLoja,
-    atendimentosPorVendedor,
     rankingConversao,
+    melhorVendedor,
+    melhorLoja,
   } = dashboardData;
 
   const indicadores = [
-    {
-      label: "Atendimentos",
-      value: totalAtendimentos,
-      icon: <Smile className="w-5 h-5 text-blue-500" />,
-    },
-    {
-      label: "Vendas",
-      value: totalVendas,
-      icon: <TrendingUp className="w-5 h-5 text-green-500" />,
-    },
-    {
-  label: "Conversão Geral",
-  value: typeof conversaoGeral === "number" ? `${conversaoGeral.toFixed(1)}%` : "0.0%",
-  icon: <BarChart3 className="w-5 h-5 text-purple-500" />,
-},
-    {
-      label: "Melhor Vendedor",
-      value: melhorVendedor ?? "-",
-      icon: <Trophy className="w-5 h-5 text-yellow-500" />,
-    },
+    { label: "Atendimentos", value: totalAtendimentos, icon: <Smile className="w-5 h-5 text-blue-500" /> },
+    { label: "Vendas", value: totalVendas, icon: <TrendingUp className="w-5 h-5 text-green-500" /> },
+    { label: "Conversão Geral", value: `${(conversaoGeral ?? 0).toFixed(1)}%`, icon: <BarChart3 className="w-5 h-5 text-purple-500" /> },
+    { label: "Melhor Vendedor", value: melhorVendedor ?? "-", icon: <Trophy className="w-5 h-5 text-yellow-500" /> },
+    { label: "Melhor Loja", value: melhorLoja ?? "-", icon: <Gift className="w-5 h-5 text-pink-500" /> },
   ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       <div className="max-w-6xl mx-auto px-2 md:px-4 py-4">
-        {/* Indicadores rápidos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {indicadores.map((card) => (
-            <div
-              key={card.label}
-              className="rounded-xl shadow p-2 sm:p-4 flex flex-col items-center bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 min-h-[90px]"
-            >
-              <span className="mb-1">{card.icon}</span>
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{card.label}</span>
-              <span className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white">{card.value}</span>
+        {/* Toggle Debug */}
+        <button
+          onClick={() => setDebugOpen(v => !v)}
+          className="mb-3 inline-flex items-center gap-2 text-xs px-2 py-1 rounded bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+          title="Abrir/fechar painel de diagnóstico"
+        >
+          <Bug className="w-4 h-4" /> Debug
+        </button>
+
+        {debugOpen && debugInfo && (
+          <pre className="mb-4 text-xs whitespace-pre-wrap bg-zinc-900 text-zinc-100 p-3 rounded">
+{JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          {indicadores.map((c) => (
+            <div key={c.label} className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 min-h-[90px]">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">{c.icon} {c.label}</div>
+              <div className="text-xl font-bold mt-1">{c.value}</div>
             </div>
           ))}
         </div>
 
-        {/* Gráficos principais */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <Card className="w-full overflow-x-auto">
-            <CardHeader>
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Atendimentos x Vendas
-              </CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base sm:text-lg flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Atendimentos x Vendas</CardTitle></CardHeader>
             <CardContent>
-              <div className="min-w-[220px] sm:min-w-0 min-h-[180px] w-full">
+              <div className="min-w-[220px] sm:min-w-0 min-h-[220px] w-full">
                 <Chart
                   data={atendimentosVendasPorDia}
                   type="bar"
                   keys={["atendimentos", "vendas"]}
-                  config={{
-                    atendimentos: { color: "#6366f1" },
-                    vendas: { color: "#10b981" },
-                  }}
+                  config={{ atendimentos: { color: "#6366f1" }, vendas: { color: "#10b981" } }}
                   xKey="data"
                 />
               </div>
             </CardContent>
           </Card>
+
           <Card className="w-full overflow-x-auto">
-            <CardHeader>
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Conversão por Lojas
-              </CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base sm:text-lg flex items-center gap-2"><BarChart3 className="w-5 h-5" /> Conversão por Lojas</CardTitle></CardHeader>
             <CardContent>
-              <div className="min-w-[220px] sm:min-w-0 min-h-[180px] w-full">
+              <div className="min-w-[220px] sm:min-w-0 min-h-[220px] w-full">
                 <Chart
                   data={conversaoPorLoja}
                   type="bar"
                   keys={["conversao"]}
-                  config={{
-                    conversao: { color: "#22c55e" },
-                  }}
+                  config={{ conversao: { color: "#22c55e" } }}
                   xKey="nome"
                   yLabel="%"
                 />
@@ -165,94 +237,38 @@ useEffect(() => {
           </Card>
         </div>
 
-        {/* Outros cards e gráficos */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <Card className="w-full overflow-x-auto">
-            <CardHeader>
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Atendimentos por Vendedor
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="min-w-[220px] sm:min-w-0 min-h-[180px] w-full">
-                <Chart
-                  data={atendimentosPorVendedor}
-                  type="bar"
-                  keys={["atendimentos"]}
-                  config={{
-                    atendimentos: { color: "#6366f1" },
-                  }}
-                  xKey="nome"
-                />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="w-full overflow-x-auto">
-            <CardHeader>
-              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                <Trophy className="w-5 h-5" />
-                Ranking de Conversão
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto min-h-[180px] w-full">
-                <table className="min-w-full text-xs sm:text-sm">
-                  <thead>
-                    <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
-                      <th className="px-1 sm:px-2 py-1 text-left">#</th>
-                      <th className="px-1 sm:px-2 py-1 text-left">Vendedor</th>
-                      <th className="px-1 sm:px-2 py-1 text-left">Loja</th>
-                      <th className="px-1 sm:px-2 py-1 text-center">Atend.</th>
-                      <th className="px-1 sm:px-2 py-1 text-center">Vendas</th>
-                      <th className="px-1 sm:px-2 py-1 text-center">Conv.</th>
+        <Card className="w-full overflow-x-auto">
+          <CardHeader><CardTitle className="text-base sm:text-lg flex items-center gap-2"><Trophy className="w-5 h-5" /> Ranking de Conversão</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs sm:text-sm">
+                <thead>
+                  <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
+                    <th className="px-2 py-1 text-left">#</th>
+                    <th className="px-2 py-1 text-left">Vendedor</th>
+                    <th className="px-2 py-1 text-left">Loja</th>
+                    <th className="px-2 py-1 text-center">Atend.</th>
+                    <th className="px-2 py-1 text-center">Vendas</th>
+                    <th className="px-2 py-1 text-center">Conv.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankingConversao.map((r: any, idx: number) => (
+                    <tr key={r.id} className="border-b border-gray-100 dark:border-zinc-800">
+                      <td className="px-2 py-1">{idx + 1}</td>
+                      <td className="px-2 py-1">{r.nome}</td>
+                      <td className="px-2 py-1">{r.lojaNome}</td>
+                      <td className="px-2 py-1 text-center">{r.atendimentos}</td>
+                      <td className="px-2 py-1 text-center">{r.vendas}</td>
+                      <td className="px-2 py-1 text-center">{r.conversao.toFixed(1)}%</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rankingConversao?.map((v: any, idx: number) => (
-                      <tr key={v.id}>
-                        <td className="px-1 sm:px-2 py-1">{idx + 1}</td>
-                        <td className="px-1 sm:px-2 py-1 font-medium">{v.nome}</td>
-                        <td className="px-1 sm:px-2 py-1">{v.lojaNome}</td>
-                        <td className="px-1 sm:px-2 py-1 text-center">{v.atendimentos}</td>
-                        <td className="px-1 sm:px-2 py-1 text-center">{v.vendas}</td>
-                        <td className="px-1 sm:px-2 py-1 text-center">{v.conversao?.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Rodapé */}
-      <footer className="mt-8 sm:mt-12 py-6 border-t text-center text-xs text-gray-500 dark:text-gray-400 flex flex-col sm:flex-row items-center justify-between gap-2 px-2">
-        <div className="mb-2 sm:mb-0">
-          Convertê &copy; {new Date().getFullYear()} &mdash; Performance e resultados com inteligência.
-        </div>
-        <div className="flex gap-4">
-          <a
-            href="https://github.com/converte"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded"
-            aria-label="GitHub"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.11-.75.41-1.27.74-1.56-2.55-.29-5.23-1.28-5.23-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 012.9-.39c.98 0 1.97.13 2.9.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.69 5.41-5.25 5.7.42.36.79 1.08.79 2.18 0 1.57-.01 2.84-.01 3.23 0 .31.21.67.8.56C20.71 21.39 24 17.08 24 12c0-6.27-5.23-11.5-12-11.5z"/></svg>
-          </a>
-          <a
-            href="https://www.linkedin.com/company/converte"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded"
-            aria-label="LinkedIn"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19 0h-14c-2.76 0-5 2.24-5 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5v-14c0-2.76-2.24-5-5-5zm-11.75 20h-3v-10h3v10zm-1.5-11.25c-.97 0-1.75-.79-1.75-1.75s.78-1.75 1.75-1.75 1.75.79 1.75 1.75-.78 1.75-1.75 1.75zm15.25 11.25h-3v-5.5c0-1.32-.03-3.01-1.84-3.01-1.84 0-2.12 1.43-2.12 2.91v5.6h-3v-10h2.88v1.36h.04c.4-.75 1.38-1.54 2.84-1.54 3.04 0 3.6 2 3.6 4.59v5.59z"/></svg>
-          </a>
-        </div>
-      </footer>
     </div>
   );
 }

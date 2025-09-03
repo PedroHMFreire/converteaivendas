@@ -1,19 +1,22 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus, Store, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { authService } from "@/lib/auth";
 import { toast } from "@/components/ui/use-toast";
 
-// Tipos
-type Loja = { id: string; nome: string };
+/* =========================
+   Tipos
+========================= */
+type Loja = { id: string; nome: string; ticketMedio?: number }; // ← agora com ticketMedio
 type Vendedor = { id: string; nome: string; lojaId: string };
 
-// Chaves para localStorage
+/* =========================
+   localStorage helpers
+========================= */
 const LOCAL_KEY_LOJAS = "converte:lojas:";
 const LOCAL_KEY_VENDEDORES = "converte:vendedores:";
 
-// Utilitários localStorage
 function getLocalKey(base: string, userId: string) {
   return `${base}${userId}`;
 }
@@ -30,36 +33,42 @@ function carregarLocais<T>(base: string, userId: string): T[] {
   }
 }
 
-// Supabase backup
-async function sincronizarComBanco(userId: string, lojas: Loja[], vendedores: Vendedor[]) {
+/* =========================
+   Utils
+========================= */
+const brl = (n?: number) =>
+  typeof n === "number"
+    ? n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 })
+    : "-";
+
+/* =========================
+   Persistência (Supabase)
+========================= */
+async function upsertCadastros(userId: string, lojas: Loja[], vendedores: Vendedor[]) {
   try {
-    console.log("[SUPABASE] Salvando dados:", {
-      user_id: userId,
-      lojas,
-      vendedores,
-      updated_at: new Date().toISOString(),
-    });
-    const { data, error } = await supabase
-      .from("cadastros_backup")
-      .upsert([
-        {
-          user_id: userId,
-          lojas,
-          vendedores,
-          updated_at: new Date().toISOString(),
-        },
-      ]);
-    if (error) {
-      console.error("[SUPABASE] Erro ao salvar:", error);
-    } else {
-      console.log("[SUPABASE] Dados salvos com sucesso:", data);
-    }
-  } catch (err) {
-    console.error("Erro ao sincronizar com banco:", err);
+    const { error } = await supabase
+      .from("cadastros")
+      .upsert(
+        [
+          {
+            user_id: userId,
+            lojas,
+            vendedores,
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: "user_id" }
+      );
+    if (error) throw error;
+  } catch (err: any) {
+    console.error("[SUPABASE] Erro ao salvar cadastros:", err);
+    throw err;
   }
 }
 
-// Componente de lista de lojas
+/* =========================
+   Componentes de lista
+========================= */
 function CadastroLojas({
   lojas,
   onAdd,
@@ -87,7 +96,12 @@ function CadastroLojas({
         )}
         {lojas.map((item) => (
           <li key={item.id} className="flex justify-between items-center py-3">
-            <span className="font-medium">{item.nome}</span>
+            <div className="flex flex-col">
+              <span className="font-medium">{item.nome}</span>
+              <span className="text-xs text-gray-500">
+                Ticket médio: <strong>{brl(item.ticketMedio)}</strong>
+              </span>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => onEdit(item)}>
                 Editar
@@ -103,7 +117,6 @@ function CadastroLojas({
   );
 }
 
-// Componente de lista de vendedores
 function CadastroVendedores({
   vendedores,
   lojas,
@@ -159,6 +172,9 @@ function CadastroVendedores({
   );
 }
 
+/* =========================
+   Página
+========================= */
 export default function Cadastros() {
   const [aba, setAba] = useState<"lojas" | "vendedores">("lojas");
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -169,91 +185,79 @@ export default function Cadastros() {
     aberto: boolean;
     item?: Loja | Vendedor;
   }>({ tipo: "loja", modo: "novo", aberto: false });
+
+  // campos do modal
   const [nome, setNome] = useState("");
   const [lojaId, setLojaId] = useState(""); // Para vendedor
-  const [userId, setUserId] = useState<string | null>(null);
-  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [ticketMedioInput, setTicketMedioInput] = useState<string>(""); // ← input do ticket
 
-  // Carregar dados ao abrir - sempre restaurar do Supabase ao logar
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Carrega do Supabase (cadastros) ao montar
   useEffect(() => {
-    const init = async () => {
+    (async () => {
       const user = await authService.getCurrentUser();
       if (!user?.id) {
-        toast({
-          title: "Erro",
-          description: "Usuário não autenticado.",
-          variant: "destructive",
-        });
+        toast({ title: "Erro", description: "Usuário não autenticado.", variant: "destructive" });
         return;
       }
       setUserId(user.id);
 
-      // Sempre buscar do Supabase ao logar
+      // Busca oficial
       const { data, error } = await supabase
-        .from("cadastros_backup")
+        .from("cadastros")
         .select("lojas, vendedores")
         .eq("user_id", user.id)
-        .order("updated_at", { ascending: false })
         .limit(1)
         .single();
-      console.log("[SUPABASE] Dados lidos:", data);
-      let lojasLocais: Loja[] = lojas;
-      let vendedoresLocais: Vendedor[] = vendedores;
-      if (data && Array.isArray(data.lojas) && Array.isArray(data.vendedores)) {
-        // Só atualiza se o Supabase retornar dados válidos (não vazios)
-        if (data.lojas.length > 0 || data.vendedores.length > 0) {
-          lojasLocais = data.lojas;
-          vendedoresLocais = data.vendedores;
-          salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasLocais);
-          salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresLocais);
-          setLojas(lojasLocais);
-          setVendedores(vendedoresLocais);
-        } else {
-          // Se o Supabase retornar arrays vazios, mantém o estado atual
-          console.warn("[SUPABASE] Dados do banco estão vazios, mantendo estado atual.");
-        }
+
+      if (error && error.code !== "PGRST116") {
+        // PGRST116 = row not found (ok, seguimos para localStorage)
+        console.error("[SUPABASE] Erro ao ler cadastros:", error);
+        toast({ title: "Erro ao buscar cadastros do Supabase", description: error.message, variant: "destructive" });
+      }
+
+      if (data && (Array.isArray(data.lojas) || Array.isArray(data.vendedores))) {
+        const lojasDb = (data.lojas || []) as Loja[];
+        const vendedoresDb = (data.vendedores || []) as Vendedor[];
+        setLojas(lojasDb);
+        setVendedores(vendedoresDb);
+        salvarLocais(LOCAL_KEY_LOJAS, user.id, lojasDb);
+        salvarLocais(LOCAL_KEY_VENDEDORES, user.id, vendedoresDb);
       } else {
-        // Se não houver dados no Supabase, tenta restaurar do localStorage
-        const lojasLocalStorage = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
-        const vendedoresLocalStorage = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
-        if (lojasLocalStorage.length > 0 || vendedoresLocalStorage.length > 0) {
-          lojasLocais = lojasLocalStorage;
-          vendedoresLocais = vendedoresLocalStorage;
-          setLojas(lojasLocais);
-          setVendedores(vendedoresLocais);
-        }
+        // Fallback: localStorage
+        const lojasLocal = carregarLocais<Loja>(LOCAL_KEY_LOJAS, user.id);
+        const vendedoresLocal = carregarLocais<Vendedor>(LOCAL_KEY_VENDEDORES, user.id);
+        setLojas(lojasLocal);
+        setVendedores(vendedoresLocal);
       }
-      if (error) {
-        console.error("[SUPABASE] Erro ao ler:", error);
-        toast({
-          title: "Erro ao buscar cadastros do Supabase",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
-    };
-    init();
-    // eslint-disable-next-line
+    })();
   }, []);
 
-// Sincronizar sempre que lojas ou vendedores forem atualizados
-useEffect(() => {
-  if (userId && (lojas.length > 0 || vendedores.length > 0)) {
-    sincronizarComBanco(userId, lojas, vendedores);
-  } else {
-    // Não sincroniza se ambos estiverem vazios
-    console.warn("[SUPABASE] Não sincroniza: lojas e vendedores estão vazios.");
-  }
-}, [lojas, vendedores, userId]);
+  // Salva automaticamente no Supabase sempre que mudar (se houver dados)
+  useEffect(() => {
+    (async () => {
+      if (!userId) return;
+      try {
+        // Evita gravar "vazio absoluto" sem necessidade
+        if (lojas.length === 0 && vendedores.length === 0) return;
+        await upsertCadastros(userId, lojas, vendedores);
+      } catch (e: any) {
+        toast({ title: "Erro ao salvar cadastros", description: String(e), variant: "destructive" });
+      }
+    })();
+  }, [lojas, vendedores, userId]);
 
-  // CRUD Lojas
+  /* ===== CRUD Lojas ===== */
   const handleAddLoja = () => {
     setModal({ tipo: "loja", modo: "novo", aberto: true });
     setNome("");
+    setTicketMedioInput(""); // limpa o ticket
   };
   const handleEditLoja = (loja: Loja) => {
     setModal({ tipo: "loja", modo: "editar", aberto: true, item: loja });
     setNome(loja.nome);
+    setTicketMedioInput(loja.ticketMedio !== undefined ? String(loja.ticketMedio) : "");
   };
   const handleDeleteLoja = (id: string) => {
     if (!userId) return;
@@ -264,10 +268,9 @@ useEffect(() => {
     setVendedores(novosVendedores);
     salvarLocais(LOCAL_KEY_LOJAS, userId, novasLojas);
     salvarLocais(LOCAL_KEY_VENDEDORES, userId, novosVendedores);
-    sincronizarComBanco(userId, novasLojas, novosVendedores);
   };
 
-  // CRUD Vendedores
+  /* ===== CRUD Vendedores ===== */
   const handleAddVendedor = () => {
     setModal({ tipo: "vendedor", modo: "novo", aberto: true });
     setNome("");
@@ -283,48 +286,52 @@ useEffect(() => {
     const novosVendedores = vendedores.filter((v) => v.id !== id);
     setVendedores(novosVendedores);
     salvarLocais(LOCAL_KEY_VENDEDORES, userId, novosVendedores);
-    sincronizarComBanco(userId, lojas, novosVendedores);
   };
 
-  // Salvar do modal
+  /* ===== Salvar do modal ===== */
   const handleSalvar = () => {
     if (!userId || !nome.trim()) return;
+
     if (modal.tipo === "loja") {
-      let novasLojas: Loja[];
+      const parsedTicket = ticketMedioInput.trim() === "" ? undefined : Math.max(0, Number(ticketMedioInput));
+      let novasLojas: Loja[] = [];
+
       if (modal.modo === "novo") {
-        novasLojas = [...lojas, { id: crypto.randomUUID(), nome }];
+        novasLojas = [...lojas, { id: crypto.randomUUID(), nome, ticketMedio: parsedTicket }];
       } else if (modal.item) {
-        novasLojas = lojas.map((l) => (l.id === modal.item?.id ? { ...l, nome } : l));
-      } else {
-        novasLojas = lojas;
+        novasLojas = lojas.map((l) =>
+          l.id === (modal.item as Loja).id ? { ...l, nome, ticketMedio: parsedTicket } : l
+        );
       }
+
       setLojas(novasLojas);
-      salvarLocais(LOCAL_KEY_LOJAS, userId, novasLojas);
-      sincronizarComBanco(userId, novasLojas, vendedores);
+      if (userId) salvarLocais(LOCAL_KEY_LOJAS, userId, novasLojas);
     } else {
       if (!lojaId) return;
-      let novosVendedores: Vendedor[];
+      let novosVendedores: Vendedor[] = [];
+
       if (modal.modo === "novo") {
         novosVendedores = [...vendedores, { id: crypto.randomUUID(), nome, lojaId }];
       } else if (modal.item) {
         novosVendedores = vendedores.map((v) =>
-          v.id === modal.item?.id ? { ...v, nome, lojaId } : v
+          v.id === (modal.item as Vendedor).id ? { ...v, nome, lojaId } : v
         );
-      } else {
-        novosVendedores = vendedores;
       }
+
       setVendedores(novosVendedores);
-      salvarLocais(LOCAL_KEY_VENDEDORES, userId, novosVendedores);
-      sincronizarComBanco(userId, lojas, novosVendedores);
+      if (userId) salvarLocais(LOCAL_KEY_VENDEDORES, userId, novosVendedores);
     }
+
     setModal({ ...modal, aberto: false });
     setNome("");
     setLojaId("");
+    setTicketMedioInput("");
   };
 
   return (
     <div className="w-full max-w-5xl mx-auto px-2 md:px-4 py-8">
       <h1 className="text-2xl font-bold mb-6">Cadastros</h1>
+
       {/* Abas */}
       <div className="flex gap-2 mb-8">
         <button
@@ -348,30 +355,21 @@ useEffect(() => {
           Vendedores
         </button>
       </div>
+
       {/* Conteúdo das abas */}
       <div>
         {aba === "lojas" ? (
-          <CadastroLojas
-            lojas={lojas}
-            onAdd={handleAddLoja}
-            onEdit={handleEditLoja}
-            onDelete={handleDeleteLoja}
-          />
+          <CadastroLojas lojas={lojas} onAdd={handleAddLoja} onEdit={handleEditLoja} onDelete={handleDeleteLoja} />
         ) : (
-          <CadastroVendedores
-            vendedores={vendedores}
-            lojas={lojas}
-            onAdd={handleAddVendedor}
-            onEdit={handleEditVendedor}
-            onDelete={handleDeleteVendedor}
-          />
+          <CadastroVendedores vendedores={vendedores} lojas={lojas} onAdd={handleAddVendedor} onEdit={handleEditVendedor} onDelete={handleDeleteVendedor} />
         )}
       </div>
+
       {/* Modal */}
       {modal.aberto && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" aria-modal="true" role="dialog">
-          <div className="bg-white dark:bg-zinc-900 p-6 rounded shadow-lg min-w-[300px]">
-            <h2 className="text-lg font-bold mb-2">
+          <div className="bg-white dark:bg-zinc-900 p-6 rounded shadow-lg min-w-[320px]">
+            <h2 className="text-lg font-bold mb-3">
               {modal.modo === "novo"
                 ? modal.tipo === "loja"
                   ? "Nova Loja"
@@ -380,17 +378,38 @@ useEffect(() => {
                 ? "Editar Loja"
                 : "Editar Vendedor"}
             </h2>
+
+            {/* Campo nome (sempre) */}
             <input
-              className="border rounded p-2 w-full mb-4 dark:bg-zinc-800 dark:text-white"
+              className="border rounded p-2 w-full mb-3 dark:bg-zinc-800 dark:text-white"
               placeholder={modal.tipo === "loja" ? "Nome da loja" : "Nome do vendedor"}
               value={nome}
               onChange={(e) => setNome(e.target.value)}
               autoFocus
             />
-            {/* Se for vendedor, mostra select de loja */}
+
+            {/* Campo ticket médio (somente para loja) */}
+            {modal.tipo === "loja" && (
+              <div className="mb-3">
+                <label className="block text-xs font-bold mb-1">Ticket médio (R$)</label>
+                <input
+                  className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  placeholder="Ex.: 180"
+                  value={ticketMedioInput}
+                  onChange={(e) => setTicketMedioInput(e.target.value)}
+                />
+                <p className="text-[11px] text-gray-500 mt-1">Usado para calcular o <em>valor perdido</em> no Raio-X de Vendas.</p>
+              </div>
+            )}
+
+            {/* Select de loja (somente para vendedor) */}
             {modal.tipo === "vendedor" && (
               <select
-                className="border rounded p-2 w-full mb-4 dark:bg-zinc-800 dark:text-white"
+                className="border rounded p-2 w-full mb-3 dark:bg-zinc-800 dark:text-white"
                 value={lojaId}
                 onChange={(e) => setLojaId(e.target.value)}
               >
@@ -401,6 +420,7 @@ useEffect(() => {
                 ))}
               </select>
             )}
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setModal({ ...modal, aberto: false })}>
                 Cancelar

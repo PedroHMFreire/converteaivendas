@@ -1,278 +1,321 @@
-import { useEffect, useState, useRef } from "react";
+"use client";
+
+import { useEffect, useState, useRef, useMemo } from "react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
-import { authService } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Download, AlertTriangle, Gift, Trophy, Smile, TrendingUp, Edit2, Trash2 } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { BarChart3, Edit2, Trash2, TrendingUp, Smile, Gift } from "lucide-react";
 import { Chart } from "@/components/ui/chart";
 
 const LOCAL_KEY = "converte:vendas:";
 const PREMIO_KEY = "converte:premio-semana:";
 
-function getLocalKey(userId: string) {
-  return `${LOCAL_KEY}${userId}`;
-}
-function getPremioKey(userId: string) {
-  return `${PREMIO_KEY}${userId}`;
-}
-
-function salvarVendasLocais(userId: string, vendas: Venda[]) {
-  localStorage.setItem(getLocalKey(userId), JSON.stringify(vendas));
-}
-function carregarVendasLocais(userId: string): Venda[] {
-  const raw = localStorage.getItem(getLocalKey(userId));
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-function salvarPremioSemana(userId: string, premio: string) {
-  localStorage.setItem(getPremioKey(userId), premio);
-}
-function carregarPremioSemana(userId: string): string {
-  return localStorage.getItem(getPremioKey(userId)) || "";
-}
-
-async function sincronizarComBanco(userId: string, vendas: Venda[]) {
-  try {
-    await supabase
-      .from("vendas_backup")
-      .upsert([{ user_id: userId, vendas, updated_at: new Date().toISOString() }]);
-  } catch (err) {
-    console.error("Erro ao sincronizar vendas com banco:", err);
-  }
-}
-
 type Venda = {
   id: string;
   vendedorId: string;
   lojaId: string;
-  atendimentos: number;
-  vendas: number;
-  data: string; // formato YYYY-MM-DD
+  valor?: number; // usado só para estimativa de referência (não entra no cálculo)
+  data: string;
   user_id: string;
+  vendas: number;
+  atendimentos: number;
 };
 
-type Vendedor = {
-  id: string;
-  nome: string;
-  lojaId: string;
-};
+type Loja = { id: string; nome: string; ticketMedio?: number; metaTicket?: number }; // + meta (referência, não entra no cálculo)
+type Vendedor = { id: string; nome: string; lojaId: string };
 
-type Loja = {
-  id: string;
-  nome: string;
-};
-
-// Função para obter o início da semana (segunda-feira)
-function getStartOfWeek(date: Date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // segunda-feira
-  d.setHours(0, 0, 0, 0);
-  return new Date(d.setDate(diff));
+function getLocalKey(userId: string) { return `${LOCAL_KEY}${userId}`; }
+function getPremioKey(userId: string) { return `${PREMIO_KEY}${userId}`; }
+function salvarVendasLocais(userId: string, vendas: Venda[]) { localStorage.setItem(getLocalKey(userId), JSON.stringify(vendas)); }
+function carregarVendasLocais(userId: string): Venda[] {
+  const raw = localStorage.getItem(getLocalKey(userId));
+  if (!raw) return [];
+  try { return JSON.parse(raw) as Venda[]; } catch { return []; }
 }
-// Função para obter o fim da semana (domingo)
-function getEndOfWeek(date: Date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() + (7 - day);
-  d.setHours(23, 59, 59, 999);
-  return new Date(d.setDate(diff));
+function salvarPremioSemana(userId: string, premio: string) { localStorage.setItem(getPremioKey(userId), premio); }
+function carregarPremioSemana(userId: string): string { return localStorage.getItem(getPremioKey(userId)) || ""; }
+const dateOnly = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date(new Date(d)).toISOString().split("T")[0];
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+
+async function sincronizarComBanco(userId: string, vendas: Venda[]) {
+  try {
+    await supabase.from("vendas_backup").upsert(
+      [{ user_id: userId, vendas, updated_at: new Date().toISOString() }],
+      { onConflict: "user_id" }
+    );
+  } catch (err) { console.error("Erro ao sincronizar vendas com banco:", err); }
 }
 
-// Função para garantir que a data está no formato YYYY-MM-DD
-const dateOnly = (d: string) => {
-  if (!d) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-  return new Date(d).toISOString().split('T')[0];
-};
+async function upsertRegistro(v: Venda, userId: string) {
+  try {
+    const payload = { ...v, user_id: userId, data: dateOnly(v.data) };
+    const { error } = await supabase.from("registros").upsert([payload], { onConflict: "id" });
+    if (error) console.error("Erro upsert registros:", error.message);
+  } catch (e) { console.error("Falha upsert registros:", e); }
+}
+async function deleteRegistro(id: string, userId: string) {
+  try {
+    const { error } = await supabase.from("registros").delete().eq("user_id", userId).eq("id", id);
+    if (error) console.error("Erro delete registros:", error.message);
+  } catch (e) { console.error("Falha delete registros:", e); }
+}
 
-function calcularMetrica(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) {
+/* ===== Métricas base (mantidas) ===== */
+function calcularMetricaBase(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) {
   const porVendedor = vendedores.map((v) => {
-    const vendasVendedor = vendas.filter((vd) => vd.vendedorId === v.id);
-    const atendimentos = vendasVendedor.reduce((a, b) => a + (b.atendimentos || 0), 0);
-    const vendasEfet = vendasVendedor.reduce((a, b) => a + (b.vendas || 0), 0);
-    const conversao = atendimentos > 0 ? ((vendasEfet / atendimentos) * 100) : 0;
-    return {
-      ...v,
-      atendimentos,
-      vendas: vendasEfet,
-      conversao,
-      lojaNome: lojas.find((l) => l.id === v.lojaId)?.nome || "Sem loja",
-    };
+    const vend = vendas.filter((vd) => vd.vendedorId === v.id);
+    const atend = vend.reduce((a, b) => a + (b.atendimentos || 0), 0);
+    const efet = vend.reduce((a, b) => a + (b.vendas || 0), 0);
+    return { id: v.id, nome: v.nome, lojaId: v.lojaId, atendimentos: atend, vendas: efet, conversao: atend > 0 ? (efet / atend) * 100 : 0 };
   });
   const porLoja = lojas.map((l) => {
-    const vendedoresLoja = vendedores.filter((v) => v.lojaId === l.id).map((v) => v.id);
-    const vendasLoja = vendas.filter((vd) => vendedoresLoja.includes(vd.vendedorId));
-    const atendimentos = vendasLoja.reduce((a, b) => a + (b.atendimentos || 0), 0);
-    const vendasEfet = vendasLoja.reduce((a, b) => a + (b.vendas || 0), 0);
-    const conversao = atendimentos > 0 ? ((vendasEfet / atendimentos) * 100) : 0;
-    return {
-      ...l,
-      atendimentos,
-      vendas: vendasEfet,
-      conversao,
-    };
+    const vend = vendas.filter((vd) => vd.lojaId === l.id);
+    const atend = vend.reduce((a, b) => a + (b.atendimentos || 0), 0);
+    const efet = vend.reduce((a, b) => a + (b.vendas || 0), 0);
+    return { id: l.id, nome: l.nome, atendimentos: atend, vendas: efet, conversao: atend > 0 ? (efet / atend) * 100 : 0 };
   });
+  const porDiaMap: Record<string, { data: string; atendimentos: number; vendas: number }> = {};
+  vendas.forEach((v) => {
+    const key = dateOnly(v.data);
+    if (!porDiaMap[key]) porDiaMap[key] = { data: key, atendimentos: 0, vendas: 0 };
+    porDiaMap[key].atendimentos += v.atendimentos || 0;
+    porDiaMap[key].vendas += v.vendas || 0;
+  });
+  const porDia = Object.values(porDiaMap).sort((a, b) => a.data.localeCompare(b.data));
   const totalAtendimentos = vendas.reduce((a, b) => a + (b.atendimentos || 0), 0);
   const totalVendas = vendas.reduce((a, b) => a + (b.vendas || 0), 0);
-  const conversaoGeral = totalAtendimentos > 0 ? ((totalVendas / totalAtendimentos) * 100) : 0;
-  const melhorVendedor = porVendedor.sort((a, b) => b.conversao - a.conversao)[0];
-  const melhorLoja = porLoja.sort((a, b) => b.conversao - a.conversao)[0];
+  const conversaoGeral = totalAtendimentos > 0 ? (totalVendas / totalAtendimentos) * 100 : 0;
+  const melhorVendedor = porVendedor.filter(x => x.atendimentos >= 3).sort((a, b) => b.conversao - a.conversao)[0]?.nome || "-";
+  const melhorLoja = porLoja.sort((a, b) => b.conversao - a.conversao)[0]?.nome || "-";
+  return { porVendedor, porLoja, porDia, totalAtendimentos, totalVendas, conversaoGeral, melhorVendedor, melhorLoja };
+}
+
+/* ===== Estimativa de referência (não entra no cálculo) ===== */
+function construirTicketEstimadoMap(vendas: Venda[]): Record<string, number> {
+  const porLoja: Record<string, { totalValor: number; totalVendas: number }> = {};
+  for (const v of vendas) {
+    const lv = v.valor ?? 0;
+    const vv = v.vendas ?? 0;
+    if (!porLoja[v.lojaId]) porLoja[v.lojaId] = { totalValor: 0, totalVendas: 0 };
+    porLoja[v.lojaId].totalValor += lv;
+    porLoja[v.lojaId].totalVendas += vv;
+  }
+  const estimado: Record<string, number> = {};
+  for (const lojaId of Object.keys(porLoja)) {
+    const { totalValor, totalVendas } = porLoja[lojaId];
+    estimado[lojaId] = totalVendas > 0 ? totalValor / totalVendas : 0;
+  }
+  return estimado;
+}
+
+/* ===== Raio-X (usa SOMENTE ticketMedio salvo) ===== */
+function calcularPerdas(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) {
+  // mapa de tickets salvos (0 se ausente): usado nos cálculos
+  const ticketSalvoMap: Record<string, number> = {};
+  const lojasSemTicket: string[] = [];
+  for (const l of lojas) {
+    const t = (typeof l.ticketMedio === "number" && !Number.isNaN(l.ticketMedio) && l.ticketMedio > 0) ? l.ticketMedio : 0;
+    ticketSalvoMap[l.id] = t;
+    if (t === 0) lojasSemTicket.push(l.nome);
+  }
+  // referência visual (não usada nos cálculos)
+  const ticketEstimadoMap = construirTicketEstimadoMap(vendas);
+
+  let valorPerdidoTotal = 0;
+  const perdidosPorVendedorMap: Record<string, number> = {};
+  const valorPerdidoPorLojaMap: Record<string, number> = {};
+
+  for (const v of vendas) {
+    const perdidos = Math.max((v.atendimentos || 0) - (v.vendas || 0), 0);
+    const ticket = ticketSalvoMap[v.lojaId] || 0; // ← SOMENTE o salvo entra aqui
+    const valorPerdido = perdidos * ticket;
+
+    perdidosPorVendedorMap[v.vendedorId] = (perdidosPorVendedorMap[v.vendedorId] || 0) + perdidos;
+    valorPerdidoPorLojaMap[v.lojaId] = (valorPerdidoPorLojaMap[v.lojaId] || 0) + valorPerdido;
+    valorPerdidoTotal += valorPerdido;
+  }
+
+  const getVendedorNome = (id: string) => vendedores.find(v => v.id === id)?.nome || "-";
+  const getLojaNome = (id: string) => lojas.find(l => l.id === id)?.nome || "-";
+
+  const perdidosPorVendedor = Object.entries(perdidosPorVendedorMap)
+    .map(([vendedorId, perdidos]) => ({ nome: getVendedorNome(vendedorId), perdidos }))
+    .sort((a, b) => b.perdidos - a.perdidos)
+    .slice(0, 12);
+
+  const valorPerdidoPorLoja = Object.entries(valorPerdidoPorLojaMap)
+    .map(([lojaId, valor]) => ({ nome: getLojaNome(lojaId), lojaId, valor }))
+    .sort((a, b) => b.valor - a.valor);
 
   return {
-    porVendedor,
-    porLoja,
-    totalAtendimentos,
-    totalVendas,
-    conversaoGeral,
-    melhorVendedor,
-    melhorLoja,
+    valorPerdidoTotal,
+    perdidosPorVendedor,
+    valorPerdidoPorLoja,
+    ticketSalvoMap,
+    ticketEstimadoMap, // referência visual
+    lojasSemTicket,
   };
 }
 
-const RegistroVendas = () => {
+export default function RegistroVendas() {
+  const [userId, setUserId] = useState<string>("");
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVenda, setEditingVenda] = useState<Venda | null>(null);
-  const [filtroLoja, setFiltroLoja] = useState("");
-  const [filtroVendedor, setFiltroVendedor] = useState("");
-  const [filtroDataInicio, setFiltroDataInicio] = useState("");
-  const [filtroDataFim, setFiltroDataFim] = useState("");
-  const [premioSemana, setPremioSemana] = useState("");
-  const [premioEdit, setPremioEdit] = useState("");
-  const [editandoPremio, setEditandoPremio] = useState(false);
   const [conversaoPreview, setConversaoPreview] = useState<number | null>(null);
+  const [filtroVendedor, setFiltroVendedor] = useState<string>("");
+  const [filtroLoja, setFiltroLoja] = useState<string>("");
+  const [filtroDataInicio, setFiltroDataInicio] = useState<string>("");
+  const [filtroDataFim, setFiltroDataFim] = useState<string>("");
+  const [premioSemana, setPremioSemana] = useState<string>("");
+  const [premioEdit, setPremioEdit] = useState<string>("");
+  const [editandoPremio, setEditandoPremio] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Carregar dados
   useEffect(() => {
-    const init = async () => {
-      const user = await authService.getCurrentUser();
-      if (!user?.id) {
-        toast({
-          title: "Erro",
-          description: "Usuário não autenticado."
-        });
-        return;
-      }
-      setUserId(user.id);
+    (async () => {
+      const { data: userResp, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !userResp?.user) { toast({ title: "Você precisa estar logado." }); return; }
+      const uid = userResp.user.id;
+      setUserId(uid);
 
-      let vendasLocais = carregarVendasLocais(user.id);
+      // registros
+      let vendasLocais: Venda[] = [];
+      try {
+        const { data: regs } = await supabase.from("registros").select("*").eq("user_id", uid);
+        if (Array.isArray(regs) && regs.length) vendasLocais = regs.map((r: any) => ({ ...r, data: dateOnly(r.data) }));
+      } catch (e) { console.warn("Falha ao consultar 'registros':", e); }
+
+      // fallback backup
       if (!vendasLocais.length) {
-        const { data, error } = await supabase
-          .from("vendas_backup")
-          .select("vendas")
-          .eq("user_id", user.id)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .single();
-        if (data?.vendas) {
-          vendasLocais = data.vendas;
-          salvarVendasLocais(user.id, vendasLocais);
-        }
-        if (error) {
-          toast({
-            title: "Erro ao buscar vendas do Supabase",
-            description: error.message
-          });
-        }
+        try {
+          const { data } = await supabase
+            .from("vendas_backup").select("vendas")
+            .eq("user_id", uid).order("updated_at", { ascending: false }).limit(1).single();
+          if (data?.vendas) { vendasLocais = data.vendas; salvarVendasLocais(uid, vendasLocais); }
+        } catch (e) { /* noop */ }
       }
+      if (!vendasLocais.length) vendasLocais = carregarVendasLocais(uid);
       setVendas(vendasLocais);
 
-      const vendedoresRaw = localStorage.getItem(`converte:vendedores:${user.id}`);
-      let vendedoresLocais: Vendedor[] = [];
-      if (vendedoresRaw) {
-        try {
-          vendedoresLocais = JSON.parse(vendedoresRaw);
-        } catch {
-          vendedoresLocais = [];
+      // cadastros (lojas + vendedores) — agora com ticketMedio em lojas
+      try {
+        const { data: cad } = await supabase.from("cadastros").select("lojas, vendedores").eq("user_id", uid).limit(1).single();
+        if (cad) {
+          setLojas((cad.lojas || []) as Loja[]);
+          setVendedores((cad.vendedores || []) as Vendedor[]);
+          localStorage.setItem(`converte:lojas:${uid}`, JSON.stringify(cad.lojas || []));
+          localStorage.setItem(`converte:vendedores:${uid}`, JSON.stringify(cad.vendedores || []));
         }
-      }
-      setVendedores(vendedoresLocais);
+      } catch (e) { console.warn("Falha ao consultar 'cadastros':", e); }
 
-      const lojasRaw = localStorage.getItem(`converte:lojas:${user.id}`);
-      let lojasLocais: Loja[] = [];
-      if (lojasRaw) {
-        try {
-          lojasLocais = JSON.parse(lojasRaw);
-        } catch {
-          lojasLocais = [];
-        }
-      }
-      setLojas(lojasLocais);
-
-      setPremioSemana(carregarPremioSemana(user.id));
-      setPremioEdit(carregarPremioSemana(user.id));
-    };
-    init();
+      setPremioSemana(carregarPremioSemana(uid));
+      setPremioEdit(carregarPremioSemana(uid));
+    })();
   }, []);
 
+  // Backup periódico
   useEffect(() => {
-  if (!userId || vendas.length === 0) return;
-
-  // Backup imediato sempre que vendas mudarem
-  requestIdleCallback(() => {
-    sincronizarComBanco(userId, vendas);
-  });
-
-  // Backup recorrente a cada 30 minutos
-  if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-  syncIntervalRef.current = setInterval(() => {
-    sincronizarComBanco(userId, vendas);
-  }, 30 * 60 * 1000);
-
-  return () => {
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-  };
-}, [userId, vendas]);
-
-  const salvarVenda = (venda: Venda) => {
     if (!userId) return;
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    syncIntervalRef.current = setInterval(() => { sincronizarComBanco(userId, vendas); }, 30 * 60 * 1000);
+    return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current); };
+  }, [userId, vendas]);
 
-    let novasVendas = editingVenda
-      ? vendas.filter((v) => v.id !== venda.id)
-      : [...vendas];
+  // Filtros
+  const vendasFiltradas = useMemo(() => vendas.filter((v) => {
+    const vendedorOK = filtroVendedor ? v.vendedorId === filtroVendedor : true;
+    const lojaOK = filtroLoja ? v.lojaId === filtroLoja : true;
+    const dataOK = (!filtroDataInicio || dateOnly(v.data) >= filtroDataInicio) && (!filtroDataFim || dateOnly(v.data) <= filtroDataFim);
+    return vendedorOK && lojaOK && dataOK;
+  }), [vendas, filtroVendedor, filtroLoja, filtroDataInicio, filtroDataFim]);
 
-    novasVendas.push({
-      ...venda,
-      id: editingVenda ? venda.id : crypto.randomUUID(),
-      data: dateOnly(venda.data),
+  const metricas = useMemo(() => calcularMetricaBase(vendasFiltradas, vendedores, lojas), [vendasFiltradas, vendedores, lojas]);
+  const evolucaoPorDia = metricas.porDia;
+  const conversaoPorLoja = metricas.porLoja.map(l => ({ nome: l.nome, conversao: Number(l.conversao.toFixed(1)) }));
+
+  // ===== Raio-X (com tickets salvos) =====
+  const perdas = useMemo(() => calcularPerdas(vendasFiltradas, vendedores, lojas), [vendasFiltradas, vendedores, lojas]);
+  const { valorPerdidoTotal, perdidosPorVendedor, valorPerdidoPorLoja, lojasSemTicket, ticketSalvoMap, ticketEstimadoMap } = perdas;
+
+  // Atualiza ticket local e salva em cadastros
+  const atualizarTicketLocal = (lojaId: string, valor: number) => {
+    setLojas(prev => prev.map(l => l.id === lojaId ? { ...l, ticketMedio: Number.isFinite(valor) ? Math.max(0, valor) : undefined } : l));
+  };
+
+  const atualizarMetaTicket = (lojaId: string, valor: number) => {
+  setLojas(prev =>
+    prev.map(l =>
+      l.id === lojaId
+        ? { ...l, metaTicket: Number.isFinite(valor) ? Math.max(0, valor) : undefined }
+        : l
+    )
+  );
+};
+
+  const salvarTickets = async () => {
+    if (!userId) return;
+    try {
+      const { error } = await supabase.from("cadastros").upsert(
+        [{ user_id: userId, lojas, vendedores, updated_at: new Date().toISOString() }],
+        { onConflict: "user_id" }
+      );
+      if (error) throw error;
+      localStorage.setItem(`converte:lojas:${userId}`, JSON.stringify(lojas));
+      toast({ title: "Ticket médio atualizado!" });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar ticket médio", description: String(e), variant: "destructive" });
+    }
+  };
+
+  // CRUD vendas
+  const handleAtendimentosChange = (at: number) => {
+    setEditingVenda((prev) => (prev ? { ...prev, atendimentos: at } : prev));
+    setConversaoPreview((prev) => {
+      const v = editingVenda?.vendas ?? 0;
+      return at > 0 ? (v / at) * 100 : null;
     });
+  };
+  const handleVendasChange = (vendasNum: number) => {
+    setEditingVenda((prev) => (prev ? { ...prev, vendas: vendasNum } : prev));
+    setConversaoPreview(editingVenda && editingVenda.atendimentos > 0 ? (vendasNum / editingVenda.atendimentos) * 100 : null);
+  };
 
-    setVendas(novasVendas);
-    salvarVendasLocais(userId, novasVendas);
-    sincronizarComBanco(userId, novasVendas);
+  const registrosRecentes = vendas.slice().sort((a, b) => b.data.localeCompare(a.data)).slice(0, 30);
+  const getVendedorNome = (id: string) => vendedores.find(v => v.id === id)?.nome || "-";
+  const getLojaNome = (id: string) => lojas.find(l => l.id === id)?.nome || "-";
+
+  const salvarVenda = async (venda: Venda) => {
+    if (!userId) return;
+    const id = venda.id || crypto.randomUUID();
+    const normalizada = { ...venda, id, user_id: userId, data: dateOnly(venda.data) };
+    await upsertRegistro(normalizada, userId);
+    const novas = [...vendas.filter(v => v.id !== id), normalizada];
+    setVendas(novas);
+    salvarVendasLocais(userId, novas);
+    sincronizarComBanco(userId, novas);
     setIsDialogOpen(false);
     setEditingVenda(null);
     setConversaoPreview(null);
-    toast({
-      title: "Venda registrada!",
-      description: `Conversão: ${((venda.vendas / (venda.atendimentos || 1)) * 100).toFixed(1)}%`
-    });
+    toast({ title: "Venda registrada!", description: `Conversão: ${((normalizada.vendas / (normalizada.atendimentos || 1)) * 100).toFixed(1)}%` });
   };
 
-  const excluirVenda = (id: string) => {
+  const excluirVenda = async (id: string) => {
     if (!userId) return;
     const novasVendas = vendas.filter((v) => v.id !== id);
     setVendas(novasVendas);
     salvarVendasLocais(userId, novasVendas);
+    await deleteRegistro(id, userId);
     sincronizarComBanco(userId, novasVendas);
   };
 
   const editarVenda = (venda: Venda) => {
     setEditingVenda(venda);
     setIsDialogOpen(true);
-    setConversaoPreview(
-      venda.atendimentos > 0 ? (venda.vendas / venda.atendimentos) * 100 : null
-    );
+    setConversaoPreview(venda.atendimentos > 0 ? (venda.vendas / venda.atendimentos) * 100 : null);
   };
 
   const novaVenda = () => {
@@ -282,385 +325,208 @@ const RegistroVendas = () => {
       lojaId: "",
       atendimentos: 0,
       vendas: 0,
-      data: "", // Deixa vazio para o usuário escolher
+      valor: 0,
+      data: dateOnly(new Date().toISOString()),
       user_id: userId!,
     });
     setIsDialogOpen(true);
     setConversaoPreview(null);
   };
 
-  const vendedoresFiltrados = filtroLoja
-    ? vendedores.filter((v) => v.lojaId === filtroLoja)
-    : vendedores;
+  const vendedoresFiltrados = filtroLoja ? vendedores.filter((v) => v.lojaId === filtroLoja) : vendedores;
 
-  useEffect(() => {
-    if (filtroVendedor) {
-      const vendedor = vendedores.find((v) => v.id === filtroVendedor);
-      if (vendedor) setFiltroLoja(vendedor.lojaId);
-    }
-  }, [filtroVendedor]);
-
-  const vendasFiltradas = vendas.filter((v) => {
-    const dataVenda = dateOnly(v.data);
-    const dentroPeriodo =
-      (!filtroDataInicio || dataVenda >= filtroDataInicio) &&
-      (!filtroDataFim || dataVenda <= filtroDataFim);
-    return (
-      (!filtroLoja || v.lojaId === filtroLoja) &&
-      (!filtroVendedor || v.vendedorId === filtroVendedor) &&
-      dentroPeriodo
-    );
-  });
-
-  const metricas = calcularMetrica(vendasFiltradas, vendedores, lojas);
-  const ranking = [...metricas.porVendedor].sort((a, b) => b.conversao - a.conversao);
-
-  const exportarPDF = () => {
-    const doc = new jsPDF();
-    doc.text("Relatório de Vendas", 14, 16);
-    doc.setFontSize(10);
-    doc.text(`Data: ${new Date().toLocaleDateString()}`, 14, 22);
-
-    autoTable(doc, {
-      head: [["Vendedor", "Loja", "Atendimentos", "Vendas", "Conversão (%)"]],
-      body: ranking.map((v) => [
-        v.nome,
-        v.lojaNome,
-        v.atendimentos,
-        v.vendas,
-        v.conversao.toFixed(1),
-      ]),
-      startY: 30,
-    });
-
-    doc.save("relatorio-vendas.pdf");
-  };
-
-  const mediaConversao = metricas.conversaoGeral;
-  const vendedoresAbaixoMedia = ranking.filter((v) => v.conversao < mediaConversao && v.atendimentos > 0);
-
-  const evolucaoPorDia = (() => {
-    const dias: { [data: string]: { atendimentos: number; vendas: number } } = {};
-
-    vendasFiltradas.forEach((v) => {
-      const d = dateOnly(v.data);
-      if (!d) return;
-      if (!dias[d]) dias[d] = { atendimentos: 0, vendas: 0 };
-      dias[d].atendimentos += v.atendimentos || 0;
-      dias[d].vendas += v.vendas || 0;
-    });
-
-    return Object.entries(dias).map(([data, val]) => ({
-      data,
-      ...val,
-    }));
-  })();
-
-  // Conversão por loja para o gráfico
-  const conversaoPorLoja = metricas.porLoja.map(loja => ({
-    nome: loja.nome,
-    conversao: Number(loja.conversao.toFixed(1)),
-  }));
-
-  // Prêmio da semana - edição e salvar
-  const handlePremioEdit = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPremioEdit(e.target.value);
-    setEditandoPremio(true);
-  };
-  const handleSalvarPremio = () => {
-    setPremioSemana(premioEdit);
-    if (userId) salvarPremioSemana(userId, premioEdit);
-    setEditandoPremio(false);
-    toast({
-      title: "Prêmio da semana salvo!",
-      description: premioEdit
-    });
-  };
-
-  const handleVendedorChange = (vendedorId: string) => {
-    const vendedor = vendedores.find((v) => v.id === vendedorId);
-    setEditingVenda((prev) =>
-      prev
-        ? {
-            ...prev,
-            vendedorId,
-            lojaId: vendedor?.lojaId || "",
-          }
-        : prev
-    );
-  };
-
-  const handleAtendimentosChange = (atendimentos: number) => {
-    setEditingVenda((prev) =>
-      prev ? { ...prev, atendimentos } : prev
-    );
-    setConversaoPreview(
-      editingVenda && atendimentos > 0
-        ? (editingVenda.vendas / atendimentos) * 100
-        : null
-    );
-  };
-  const handleVendasChange = (vendasNum: number) => {
-    setEditingVenda((prev) =>
-      prev ? { ...prev, vendas: vendasNum } : prev
-    );
-    setConversaoPreview(
-      editingVenda && editingVenda.atendimentos > 0
-        ? (vendasNum / editingVenda.atendimentos) * 100
-        : null
-    );
-  };
-
-  // ----------- NOVA FUNCIONALIDADE: Lista dos 30 Cadastros mais recentes -----------
-  const registrosSemana = vendas
-    .slice()
-    .sort((a, b) => b.data.localeCompare(a.data))
-    .slice(0, 30);
-
-  // Utilitário para pegar nome do vendedor e loja
-  const getVendedorNome = (id: string) => vendedores.find(v => v.id === id)?.nome || "-";
-  const getLojaNome = (id: string) => lojas.find(l => l.id === id)?.nome || "-";
-
-  // ------------------------------------------------------------------------
-
+  /* ================= UI ================= */
   return (
     <div className="w-full max-w-6xl mx-auto px-2 md:px-4 py-8">
-      {/* Header e botões */}
+      {/* Filtros + ação */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-white">
-          <TrendingUp className="w-7 h-7 text-blue-500" /> Registro de Vendas
-        </h1>
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <Button onClick={novaVenda} className="bg-blue-600 text-white font-bold hover:bg-blue-700 w-full sm:w-auto">
-            <Smile className="w-4 h-4 mr-1" /> Nova Venda
-          </Button>
-          <Button variant="outline" onClick={exportarPDF} className="w-full sm:w-auto">
-            <Download className="w-4 h-4 mr-1" /> Exportar PDF
-          </Button>
-        </div>
-      </div>
-
-      {/* Filtros + Prêmio da semana */}
-      <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-6 items-end">
-        <div className="w-full sm:w-auto">
-          <label className="block text-xs font-bold mb-1">Loja</label>
-          <select
-            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
-            value={filtroLoja}
-            onChange={(e) => {
-              setFiltroLoja(e.target.value);
-              setFiltroVendedor("");
-            }}
-          >
-            <option value="">Todas as lojas</option>
-            {lojas.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="w-full sm:w-auto">
-          <label className="block text-xs font-bold mb-1">Vendedor</label>
-          <select
-            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
-            value={filtroVendedor}
-            onChange={(e) => setFiltroVendedor(e.target.value)}
-          >
-            <option value="">Todos os vendedores</option>
-            {vendedoresFiltrados.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.nome}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="w-full sm:w-auto">
-          <label className="block text-xs font-bold mb-1">Data início</label>
-          <input
-            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
-            type="date"
-            value={filtroDataInicio}
-            onChange={(e) => setFiltroDataInicio(e.target.value)}
-          />
-        </div>
-        <div className="w-full sm:w-auto">
-          <label className="block text-xs font-bold mb-1">Data fim</label>
-          <input
-            className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white"
-            type="date"
-            value={filtroDataFim}
-            onChange={(e) => setFiltroDataFim(e.target.value)}
-          />
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setFiltroLoja("");
-            setFiltroVendedor("");
-            setFiltroDataInicio("");
-            setFiltroDataFim("");
-          }}
-          className="w-full sm:w-auto"
-        >
-          Limpar Filtros
-        </Button>
-        {/* Prêmio da semana abaixo dos filtros no mobile */}
-        <div className="flex flex-col w-full sm:w-auto sm:items-end gap-2 sm:ml-auto">
-          <div className="flex flex-col">
-            <label className="text-xs font-bold mb-1 text-yellow-700 flex items-center gap-1 uppercase">
-              <Trophy className="w-4 h-4 text-yellow-600" />
-              Prêmio da Semana
-            </label>
-            <input
-              className="border-2 border-yellow-300 rounded-lg p-2 text-base font-semibold bg-white/80 focus:outline-none focus:ring-2 focus:ring-yellow-300 dark:bg-zinc-900 dark:border-yellow-600 w-full"
-              placeholder="Ex: Vale-Presente, Dia de Folga..."
-              value={premioEdit}
-              onChange={handlePremioEdit}
-              style={{ minWidth: 0 }}
-            />
+        <div className="flex gap-2 w-full sm:w-auto">
+          <div className="w-full sm:w-48">
+            <label className="block text-xs font-bold mb-1">Loja</label>
+            <select className="border p-2 w-full dark:bg-zinc-800 dark:text-white" value={filtroLoja} onChange={(e) => setFiltroLoja(e.target.value)}>
+              <option value="">Todas</option>
+              {lojas.map((l) => (<option key={l.id} value={l.id}>{l.nome}</option>))}
+            </select>
           </div>
-          <Button
-            type="button"
-            className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold w-full sm:w-auto"
-            onClick={handleSalvarPremio}
-            disabled={!editandoPremio || premioEdit.trim() === ""}
-          >
-            Salvar
-          </Button>
-        </div>
-      </div>
-
-      {/* Indicadores rápidos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        {[
-          {
-            label: "Atendimentos",
-            value: metricas.totalAtendimentos,
-            icon: <Smile className="w-5 h-5 text-blue-500" />,
-          },
-          {
-            label: "Vendas",
-            value: metricas.totalVendas,
-            icon: <TrendingUp className="w-5 h-5 text-green-500" />,
-          },
-          {
-            label: "Conversão Média",
-            value: `${metricas.conversaoGeral.toFixed(1)}%`,
-            icon: <BarChart3 className="w-5 h-5 text-purple-500" />,
-          },
-          {
-            label: "Melhor Vendedor",
-            value: metricas.melhorVendedor?.nome || "-",
-            icon: <Trophy className="w-5 h-5 text-yellow-500" />,
-          },
-          {
-            label: "Melhor Loja",
-            value: metricas.melhorLoja?.nome || "-",
-            icon: <Gift className="w-5 h-5 text-pink-500" />,
-          },
-        ].map((card) => (
-          <div
-            key={card.label}
-            className="rounded-xl shadow p-4 flex flex-col items-center bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 min-h-[90px]"
-          >
-            <span className="mb-1">{card.icon}</span>
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{card.label}</span>
-            <span className="text-2xl font-extrabold text-gray-900 dark:text-white">{card.value}</span>
+          <div className="w-full sm:w-56">
+            <label className="block text-xs font-bold mb-1">Vendedor</label>
+            <select className="border p-2 w-full dark:bg-zinc-800 dark:text-white" value={filtroVendedor} onChange={(e) => setFiltroVendedor(e.target.value)}>
+              <option value="">Todos</option>
+              {vendedoresFiltrados.map((v) => (<option key={v.id} value={v.id}>{v.nome}</option>))}
+            </select>
           </div>
-        ))}
+        </div>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <div>
+            <label className="block text-xs font-bold mb-1">Data início</label>
+            <input className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white" type="date" value={filtroDataInicio} onChange={(e) => setFiltroDataInicio(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-bold mb-1">Data fim</label>
+            <input className="border rounded p-2 w-full dark:bg-zinc-800 dark:text-white" type="date" value={filtroDataFim} onChange={(e) => setFiltroDataFim(e.target.value)} />
+          </div>
+        </div>
+        <div className="w-full sm:w-auto">
+          <Button onClick={novaVenda} className="w-full">Nova venda</Button>
+        </div>
       </div>
 
-      {/* Ranking dos vendedores */}
-      <div className="mb-8">
-        <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-blue-700 dark:text-blue-300">
-          <BarChart3 className="w-5 h-5" /> Ranking de Conversão dos Vendedores
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-xs sm:text-sm">
-            <thead>
-              <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
-                <th className="px-1 sm:px-2 py-1 text-left">#</th>
-                <th className="px-1 sm:px-2 py-1 text-left">Vendedor</th>
-                <th className="px-1 sm:px-2 py-1 text-left hidden xs:table-cell">Loja</th>
-                <th className="px-1 sm:px-2 py-1 text-center">Atend.</th>
-                <th className="px-1 sm:px-2 py-1 text-center">Vendas</th>
-                <th className="px-1 sm:px-2 py-1 text-center">Conv.</th>
-                <th className="px-1 sm:px-2 py-1 text-center">Alerta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ranking.map((v, idx) => (
-                <tr
-                  key={v.id}
-                  className={
-                    idx < 3
-                      ? "bg-green-50 dark:bg-green-900/20"
-                      : ""
-                  }
-                >
-                  <td className="px-1 sm:px-2 py-1">{idx + 1}</td>
-                  <td className="px-1 sm:px-2 py-1 font-medium">{v.nome}</td>
-                  <td className="px-1 sm:px-2 py-1 hidden xs:table-cell">{v.lojaNome}</td>
-                  <td className="px-1 sm:px-2 py-1 text-center">{v.atendimentos}</td>
-                  <td className="px-1 sm:px-2 py-1 text-center">{v.vendas}</td>
-                  <td className="px-1 sm:px-2 py-1 text-center">{v.conversao.toFixed(1)}%</td>
-                  <td className="px-1 sm:px-2 py-1 text-center">
-                    {v.atendimentos > 0 && v.conversao < mediaConversao && (
-                      <span title="Conversão abaixo da média">
-                        <AlertTriangle className="w-4 h-4 text-red-500 inline" />
-                      </span>
-                    )}
-                    {idx === 0 && v.conversao > 0 && (
-                      <span title="Melhor Conversão" className="ml-1">🏆</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Painel: Ticket médio por loja */}
+      <div className="mb-6 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold">Ticket médio por loja</h3>
+          <Button size="sm" onClick={salvarTickets}>Salvar tickets</Button>
         </div>
-        {vendedoresAbaixoMedia.length > 0 && (
-          <div className="mt-2 text-xs sm:text-sm text-red-600 dark:text-red-400 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {vendedoresAbaixoMedia.length} vendedor(es) com conversão abaixo da média.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {lojas.length === 0 ? (
+            <div className="text-xs text-gray-500">Cadastre lojas na página Cadastros.</div>
+          ) : lojas.map((l) => {
+            const hasSalvo = typeof l.ticketMedio === "number" && l.ticketMedio > 0;
+            return (
+              <div key={l.id} className="flex items-center gap-2">
+                <div className="text-xs w-40 truncate flex items-center gap-2">
+                  <span>{l.nome}</span>
+                  {hasSalvo ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Usado</span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Pendente</span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="Ex.: 180"
+                  value={l.ticketMedio ?? ""}
+                  onChange={(e) => atualizarTicketLocal(l.id, Number(e.target.value))}
+                  className="border rounded p-2 text-sm w-36 dark:bg-zinc-800 dark:text-white"
+                />
+                <div className="text-[11px] text-gray-500">
+                  Ref.: {brl(ticketEstimadoMap[l.id] || 0)} <span className="opacity-60">(não entra no cálculo)</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {lojasSemTicket.length > 0 && (
+          <div className="text-[11px] text-amber-600 mt-2">
+            Preencha o ticket médio das lojas para projeções corretas. Faltando: {lojasSemTicket.join(", ")}
           </div>
         )}
       </div>
 
-      {/* Gráficos lado a lado */}
-      <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Gráfico de evolução */}
+{/* Tabela comparativa (Ticket salvo × Meta — meta é referência e NÃO entra no cálculo) */}
+<div className="mb-6 rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
+  <div className="flex items-center justify-between mb-2">
+    <h3 className="text-sm font-semibold">Ticket médio × Meta Ticket (referência)</h3>
+    <Button size="sm" onClick={salvarTickets}>Salvar metas</Button> {/* usa o mesmo salvamento de lojas */}
+  </div>
+
+  {lojas.length === 0 ? (
+    <div className="text-xs text-gray-500">Sem lojas cadastradas.</div>
+  ) : (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-xs sm:text-sm">
+        <thead>
+          <tr className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-gray-100">
+            <th className="px-2 py-1 text-left">Loja</th>
+            <th className="px-2 py-1 text-right">Ticket atual (usado)</th>
+            <th className="px-2 py-1 text-right">Meta Ticket (editável)</th>
+            <th className="px-2 py-1 text-right">Diferença</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lojas.map((l) => {
+            const atual = (typeof l.ticketMedio === "number" && l.ticketMedio > 0) ? l.ticketMedio! : undefined;
+            const meta = (typeof l.metaTicket === "number" && l.metaTicket >= 0) ? l.metaTicket! : undefined;
+            const gap = (meta !== undefined && atual !== undefined) ? (meta - atual) : undefined; // >0 = falta subir
+
+            return (
+              <tr key={l.id} className="border-b border-gray-100 dark:border-zinc-800">
+                <td className="px-2 py-1">{l.nome}</td>
+                <td className="px-2 py-1 text-right">{atual !== undefined ? brl(atual) : "-"}</td>
+                <td className="px-2 py-1 text-right">
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="Meta"
+                    value={l.metaTicket ?? ""}
+                    onChange={(e) => atualizarMetaTicket(l.id, Number(e.target.value))}
+                    className="border rounded p-1 w-28 text-right dark:bg-zinc-800 dark:text-white"
+                    title="Meta de ticket por loja (referência, não entra no cálculo)"
+                  />
+                </td>
+                <td className={`px-2 py-1 text-right ${
+                  gap !== undefined ? (gap > 0 ? "text-rose-600" : "text-emerald-600") : ""
+                }`}>
+                  {gap !== undefined ? (gap === 0 ? "OK" : brl(gap)) : "-"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+  <p className="text-[11px] text-gray-500 mt-2">
+    * A <strong>Meta Ticket</strong> é apenas referência gerencial e <strong>não entra</strong> nos cálculos de valor perdido ou conversão.
+  </p>
+</div>
+
+      {/* Indicadores principais + Perdas */}
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-6">
+        <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><Smile className="w-5 h-5" /> Atendimentos</div>
+          <div className="text-xl font-bold mt-1">{metricas.totalAtendimentos}</div>
+        </div>
+        <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><TrendingUp className="w-5 h-5" /> Vendas</div>
+          <div className="text-xl font-bold mt-1">{metricas.totalVendas}</div>
+        </div>
+        <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><BarChart3 className="w-5 h-5" /> Conversão</div>
+          <div className="text-xl font-bold mt-1">{metricas.conversaoGeral.toFixed(1)}%</div>
+        </div>
+        <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><BarChart3 className="w-5 h-5" /> Perdidos</div>
+          <div className="text-xl font-bold mt-1">
+            {vendasFiltradas.reduce((acc, v) => acc + Math.max((v.atendimentos||0)-(v.vendas||0), 0), 0)}
+          </div>
+        </div>
+        <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><Gift className="w-5 h-5" /> Valor Perdido</div>
+          <div className="text-xl font-bold mt-1">{brl(valorPerdidoTotal)}</div>
+        </div>
+      </div>
+
+      {/* Gráficos: base + raio-x */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <div className="w-full max-w-full overflow-x-auto">
-          <h2 className="text-lg font-bold mb-2 text-green-700 dark:text-green-300 flex items-center gap-2">
+          <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
             <TrendingUp className="w-5 h-5" /> Evolução de Atendimentos e Vendas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full" style={{ minWidth: 0 }}>
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full">
             <Chart
               data={evolucaoPorDia}
               type="bar"
               keys={["atendimentos", "vendas"]}
-              config={{
-                atendimentos: { color: "#6366f1" },
-                vendas: { color: "#10b981" },
-              }}
+              config={{ atendimentos: { color: "#6366f1" }, vendas: { color: "#10b981" } }}
               xKey="data"
             />
           </div>
         </div>
-        {/* Gráfico de conversão por loja */}
+
         <div className="w-full max-w-full overflow-x-auto">
           <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
             <BarChart3 className="w-5 h-5" /> Conversão por Lojas
           </h2>
-          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full" style={{ minWidth: 0 }}>
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full">
             <Chart
               data={conversaoPorLoja}
               type="bar"
               keys={["conversao"]}
-              config={{
-                conversao: { color: "#22c55e" },
-              }}
+              config={{ conversao: { color: "#22c55e" } }}
               xKey="nome"
               yLabel="%"
             />
@@ -668,15 +534,47 @@ const RegistroVendas = () => {
         </div>
       </div>
 
-      {/* ----------- NOVA FUNCIONALIDADE: Lista de Cadastros da Semana ----------- */}
+      {/* Raio-X: Perdidos por vendedor + Valor perdido por loja */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className="w-full max-w-full overflow-x-auto">
+          <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5" /> Não convertidos por vendedor (Top 12)
+          </h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full">
+            <Chart
+              data={perdidosPorVendedor}
+              type="bar"
+              keys={["perdidos"]}
+              config={{ perdidos: { color: "#ef4444" } }}
+              xKey="nome"
+            />
+          </div>
+        </div>
+
+        <div className="w-full max-w-full overflow-x-auto">
+          <h2 className="text-lg font-bold mb-2 text-blue-700 dark:text-blue-300 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5" /> Vendas Perdidas
+          </h2>
+          <div className="bg-white dark:bg-zinc-900 rounded-lg shadow p-2 sm:p-4 w-full">
+            <Chart
+              data={valorPerdidoPorLoja.map(x => ({ ...x, valor: Math.round(x.valor) }))}
+              type="bar"
+              keys={["valor"]}
+              config={{ valor: { color: "#f59e0b" } }}
+              xKey="nome"
+              yLabel="R$"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Lista de registros */}
       <div className="mb-10">
         <h2 className="text-lg font-bold mb-2 flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-          <Edit2 className="w-5 h-5" /> Cadastros da Semana (Editáveis)
+          <Edit2 className="w-5 h-5" /> Registros Recentes
         </h2>
-        {registrosSemana.length === 0 ? (
-          <div className="text-gray-500 dark:text-gray-400 text-sm">
-            Nenhum registro cadastrado nesta semana.
-          </div>
+        {registrosRecentes.length === 0 ? (
+          <div className="text-gray-500 dark:text-gray-400 text-sm">Nenhum registro cadastrado.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-xs sm:text-sm border rounded">
@@ -687,40 +585,22 @@ const RegistroVendas = () => {
                   <th className="px-1 sm:px-2 py-1 text-left">Loja</th>
                   <th className="px-1 sm:px-2 py-1 text-center">Atend.</th>
                   <th className="px-1 sm:px-2 py-1 text-center">Vendas</th>
+                  <th className="px-1 sm:px-2 py-1 text-center">Valor</th>
                   <th className="px-1 sm:px-2 py-1 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {registrosSemana.map((v) => (
-                  <tr key={v.id} className="border-b last:border-b-0">
-                    <td className="px-1 sm:px-2 py-1">{dateOnly(v.data).split('-').reverse().join('/')}</td>
-                    <td className="px-1 sm:px-2 py-1">{getVendedorNome(v.vendedorId)}</td>
-                    <td className="px-1 sm:px-2 py-1">{getLojaNome(v.lojaId)}</td>
-                    <td className="px-1 sm:px-2 py-1 text-center">{v.atendimentos}</td>
-                    <td className="px-1 sm:px-2 py-1 text-center">{v.vendas}</td>
+                {registrosRecentes.map((r) => (
+                  <tr key={r.id} className="border-b border-gray-100 dark:border-zinc-800">
+                    <td className="px-1 sm:px-2 py-1">{r.data}</td>
+                    <td className="px-1 sm:px-2 py-1">{getVendedorNome(r.vendedorId)}</td>
+                    <td className="px-1 sm:px-2 py-1">{getLojaNome(r.lojaId)}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">{r.atendimentos}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">{r.vendas}</td>
+                    <td className="px-1 sm:px-2 py-1 text-center">{r.valor ? brl(r.valor) : "-"}</td>
                     <td className="px-1 sm:px-2 py-1 text-center">
-                      <div className="flex gap-2 justify-center">
-                        <button
-                          className="inline-flex items-center px-2 py-1 text-xs rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900"
-                          title="Editar"
-                          aria-label="Editar cadastro"
-                          onClick={() => editarVenda(v)}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          className="inline-flex items-center px-2 py-1 text-xs rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-900"
-                          title="Excluir"
-                          aria-label="Excluir cadastro"
-                          onClick={() => {
-                            if (window.confirm("Tem certeza que deseja excluir este registro?")) {
-                              excluirVenda(v.id);
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => editarVenda(r)}><Edit2 className="w-4 h-4" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => excluirVenda(r.id)}><Trash2 className="w-4 h-4" /></Button>
                     </td>
                   </tr>
                 ))}
@@ -729,136 +609,57 @@ const RegistroVendas = () => {
           </div>
         )}
       </div>
-      {/* ---------------------------------------------------------------------- */}
 
-      {/* Modal de adicionar/editar venda */}
-      {isDialogOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-zinc-900 p-4 sm:p-6 rounded shadow-lg w-full max-w-xs sm:max-w-sm mx-2">
-            <h2 className="text-lg font-bold mb-2 flex items-center gap-2">
+      {/* Modal de edição/criação */}
+      {isDialogOpen && editingVenda && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow p-4 w-full max-w-md">
+            <h2 className="text-lg font-bold mb-3 flex items-center gap-2">
               <Smile className="w-5 h-5 text-green-500" />
-              {editingVenda && editingVenda.id ? "Editar Venda" : "Nova Venda"}
+              {editingVenda.id ? "Editar Venda" : "Nova Venda"}
             </h2>
             <form
               onSubmit={e => {
                 e.preventDefault();
-                if (
-                  editingVenda &&
-                  editingVenda.atendimentos > 0 &&
-                  editingVenda.vendas >= 0 &&
-                  editingVenda.vendedorId &&
-                  editingVenda.lojaId &&
-                  editingVenda.data
-                ) {
+                if (editingVenda && editingVenda.atendimentos >= 0 && editingVenda.vendas >= 0 && editingVenda.vendedorId && editingVenda.lojaId && editingVenda.data) {
                   salvarVenda(editingVenda);
                 } else {
-                  toast({
-                    title: "Erro",
-                    description: "Preencha todos os campos obrigatórios."
-                  });
+                  toast({ title: "Preencha todos os campos obrigatórios.", variant: "destructive" });
                 }
               }}
             >
-              <input
-                className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
-                type="date"
-                value={editingVenda?.data ? dateOnly(editingVenda.data) : ""}
-                onChange={(e) =>
-                  setEditingVenda((prev) =>
-                    prev ? { ...prev, data: e.target.value } : prev
-                  )
-                }
-                required
-                placeholder="Selecione a data do atendimento"
-              />
-              <select
-                className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
-                value={editingVenda?.vendedorId ?? ""}
-                onChange={(e) => handleVendedorChange(e.target.value)}
-                required
-              >
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="date" value={editingVenda.data} onChange={(e) => setEditingVenda({ ...editingVenda, data: e.target.value })} required />
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Atendimentos" value={editingVenda.atendimentos} onChange={(e) => handleAtendimentosChange(Number(e.target.value))} min={0} required />
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Vendas" value={editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
+
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Valor total (R$)" value={editingVenda.valor ?? 0}
+                     onChange={(e) => setEditingVenda({ ...editingVenda, valor: Number(e.target.value) })} min={0} />
+
+              <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.vendedorId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, vendedorId: e.target.value })} required>
                 <option value="">Selecione o vendedor</option>
-                {vendedores.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.nome}
-                  </option>
-                ))}
+                {vendedores.map((v) => (<option key={v.id} value={v.id}>{v.nome}</option>))}
               </select>
-              <select
-                className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
-                value={editingVenda?.lojaId ?? ""}
-                disabled
-                required
-              >
+              <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.lojaId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, lojaId: e.target.value })} required>
                 <option value="">Selecione a loja</option>
-                {lojas.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.nome}
-                  </option>
-                ))}
+                {lojas.map((l) => (<option key={l.id} value={l.id}>{l.nome}</option>))}
               </select>
-              <div className="flex flex-col sm:flex-row gap-2 mb-2">
-                <div className="flex flex-col w-full">
-                  <label className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">Atendimentos</label>
-                  <input
-                    className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
-                    type="number"
-                    min={0}
-                    placeholder="Digite o número de atendimentos"
-                    value={editingVenda?.atendimentos === 0 || editingVenda?.atendimentos === undefined ? "" : editingVenda?.atendimentos}
-                    onChange={e => {
-                      const val = e.target.value === "" ? 0 : Number(e.target.value);
-                      handleAtendimentosChange(val);
-                    }}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col w-full">
-                  <label className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">Vendas</label>
-                  <input
-                    className="border p-2 w-full dark:bg-zinc-800 dark:text-white"
-                    type="number"
-                    min={0}
-                    placeholder="Digite o número de vendas"
-                    value={editingVenda?.vendas === 0 || editingVenda?.vendas === undefined ? "" : editingVenda?.vendas}
-                    onChange={e => {
-                      const val = e.target.value === "" ? 0 : Number(e.target.value);
-                      handleVendasChange(val);
-                    }}
-                    required
-                  />
-                </div>
-              </div>
-              {editingVenda && editingVenda.atendimentos > 0 && (
-                <div className="mb-2 text-xs sm:text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" />
-                  Conversão:{" "}
-                  <span className="font-bold">
-                    {(
-                      (editingVenda.vendas / editingVenda.atendimentos) *
-                      100
-                    ).toFixed(1)}
-                    %
-                  </span>
-                </div>
+
+              {conversaoPreview !== null && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Conversão prévia: {conversaoPreview.toFixed(1)}%</div>
               )}
-              <div className="flex flex-col sm:flex-row justify-end gap-2">
-                <Button variant="outline" type="button" className="w-full sm:w-auto" onClick={() => { setIsDialogOpen(false); setConversaoPreview(null); }}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="w-full sm:w-auto">Salvar</Button>
+
+              <div className="flex items-center justify-end gap-2 mt-4">
+                <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingVenda(null); }}>Cancelar</Button>
+                <Button type="submit">Salvar</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Rodapé */}
       <footer className="mt-8 sm:mt-12 py-6 border-t text-center text-xs text-gray-500 dark:text-gray-400">
-        Convertê &copy; {new Date().getFullYear()} &mdash; Performance e resultados com inteligência.
+        Convertê &copy; {new Date().getFullYear()} — Performance e resultados com inteligência.
       </footer>
     </div>
   );
-};
-
-export default RegistroVendas;
+}
