@@ -1,113 +1,155 @@
-import { supabase } from './supabaseClient';
-import { User, LoginData, RegisterData } from '@/types/auth';
+// src/lib/auth.ts
+import { supabase } from '@/lib/supabaseClient';
 
-// Função para transformar Supabase User em User do sistema
-const mapSupabaseUser = (supabaseUser: any, extraData: any = {}): User => ({
-  id: supabaseUser.id,
-  nome: extraData.nome || '',
-  email: supabaseUser.email,
-  empresa: extraData.empresa || '',
-  telefone: extraData.telefone || '',
-  plano: extraData.plano || 'trial',
-  dataInicio: extraData.dataInicio || new Date().toISOString(),
-  dataExpiracao: extraData.dataExpiracao || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  ativo: extraData.ativo !== undefined ? extraData.ativo : true,
-  lojasPermitidas: extraData.lojasPermitidas || [],
-  createdAt: extraData.createdAt || new Date().toISOString(),
-});
+export type AppPlan = 'trial' | 'basic' | 'premium' | 'unknown';
 
-export const authService = {
-  // Registrar novo usuário no Supabase Auth
-  register: async (registerData: RegisterData): Promise<User> => {
-    const { email, senha, nome, empresa, telefone } = registerData;
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password: senha,
-      options: {
-        data: {
-          nome,
-          empresa,
-          telefone,
-          plano: 'trial',
-          dataInicio: new Date().toISOString(),
-          dataExpiracao: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          ativo: true,
-          lojasPermitidas: [],
-          createdAt: new Date().toISOString(),
-        },
-      },
-    });
-
-    if (error) throw new Error(error.message);
-
-    // Retornar usuário logado do supabase
-    const user = mapSupabaseUser(data.user, data.user.user_metadata);
-    return user;
-  },
-
-  // Login via Supabase Auth
-  login: async (loginData: LoginData): Promise<User> => {
-    const { email, senha } = loginData;
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password: senha,
-    });
-
-    if (error || !data.user) throw new Error(error?.message || 'Email ou senha inválidos');
-
-    // Buscar dados do usuário autenticado
-    const user = mapSupabaseUser(data.user, data.user.user_metadata);
-    return user;
-  },
-
-  // Logout
-  logout: async () => {
-    await supabase.auth.signOut();
-  },
-
-  // Usuário atual (do Supabase, não do localStorage)
-  getCurrentUser: async (): Promise<User | null> => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) return null;
-    // Pega também os metadados
-    return mapSupabaseUser(data.user, data.user.user_metadata);
-  },
-
-  // Atualizar perfil
-  updateProfile: async (userData: Partial<User>): Promise<User> => {
-    const { data, error } = await supabase.auth.updateUser({
-      data: userData,
-    });
-    if (error || !data.user) throw new Error('Erro ao atualizar perfil');
-    return mapSupabaseUser(data.user, data.user.user_metadata);
-  },
-
-  // Verificar se tem acesso à loja
-  hasAccessToLoja: async (lojaId: string): Promise<boolean> => {
-    const user = await authService.getCurrentUser();
-    if (!user || !user.ativo) return false;
-    if (user.lojasPermitidas.length === 0) return true;
-    return user.lojasPermitidas.includes(lojaId);
-  },
-
-  // Verificar se período de teste expirou
-  isTrialExpired: async (): Promise<boolean> => {
-    const user = await authService.getCurrentUser();
-    if (!user) return true;
-    if (user.plano === 'trial') {
-      return new Date() > new Date(user.dataExpiracao);
-    }
-    return false;
-  },
-
-  // Dias restantes do trial
-  getTrialDaysLeft: async (): Promise<number> => {
-    const user = await authService.getCurrentUser();
-    if (!user || user.plano !== 'trial') return 0;
-    const now = new Date();
-    const expiration = new Date(user.dataExpiracao);
-    const diffTime = expiration.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  }
+export type AppProfile = {
+  user_id: string;
+  email: string | null;
+  plano: AppPlan;
+  ativo: boolean | null;
+  data_expiracao: string | null; // DATE no banco (string no client)
+  mp_preapproval_id?: string | null;
+  plano_recorrencia?: 'mensal' | 'trimestral' | 'anual' | null;
 };
+
+export type AppUser = {
+  id: string;
+  email: string | null;
+  nome?: string | null;
+  empresa?: string | null;
+  plano?: AppPlan;
+  dataExpiracao?: string | null;
+};
+
+/* -----------------------------------------------------------
+   Helpers para aceitar 2 assinaturas:
+   - login(email, password)
+   - login({ email, password })
+----------------------------------------------------------- */
+type Creds = { email: string; password: string };
+
+function normalizeCreds(a: string | Creds, b?: string): Creds {
+  if (typeof a === 'object' && a !== null) {
+    return {
+      email: String((a as Creds).email ?? ''),
+      password: String((a as Creds).password ?? ''),
+    };
+  }
+  return { email: String(a ?? ''), password: String(b ?? '') };
+}
+
+/* -----------------------------------------------------------
+   Autenticação
+----------------------------------------------------------- */
+async function login(a: string | Creds, b?: string) {
+  const { email, password } = normalizeCreds(a, b);
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data; // { user, session }
+}
+
+async function register(a: string | Creds, b?: string) {
+  const { email, password } = normalizeCreds(a, b);
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data; // { user, session }
+}
+
+async function logout() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+  return true;
+}
+
+/* -----------------------------------------------------------
+   Sessão (usado pelo AuthGuard)
+----------------------------------------------------------- */
+async function getSession() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data?.session ?? null;
+}
+
+/* -----------------------------------------------------------
+   Usuário atual + perfil (fonte da verdade no DB)
+----------------------------------------------------------- */
+async function getCurrentUser(): Promise<AppUser | null> {
+  const { data: uData, error: uErr } = await supabase.auth.getUser();
+  if (uErr || !uData?.user) return null;
+
+  const uid = uData.user.id;
+  const email = uData.user.email ?? null;
+
+  const { data: pData } = await supabase
+    .from('profiles')
+    .select('user_id, email, plano, ativo, data_expiracao')
+    .eq('user_id', uid)
+    .single();
+
+  const profile = (pData ?? null) as AppProfile | null;
+
+  return {
+    id: uid,
+    email,
+    plano: (profile?.plano ?? 'unknown') as AppPlan,
+    dataExpiracao: profile?.data_expiracao ?? null,
+    nome: (uData.user.user_metadata as any)?.nome ?? null,
+    empresa: (uData.user.user_metadata as any)?.empresa ?? null,
+  };
+}
+
+/* -----------------------------------------------------------
+   Plano atual (profiles.plano)
+----------------------------------------------------------- */
+async function getCurrentPlan(): Promise<AppPlan> {
+  const { data: uData } = await supabase.auth.getUser();
+  if (!uData?.user) return 'unknown';
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('plano')
+    .eq('user_id', uData.user.id)
+    .single();
+
+  if (error) return 'unknown';
+  return (data?.plano ?? 'unknown') as AppPlan;
+}
+
+/* -----------------------------------------------------------
+   Dias restantes de trial (RPC SQL: public.trial_days_left)
+----------------------------------------------------------- */
+async function getTrialDaysLeft(): Promise<number> {
+  const { data: uData } = await supabase.auth.getUser();
+  if (!uData?.user) return 0;
+
+  const { data, error } = await supabase.rpc('trial_days_left', { p_user: uData.user.id });
+  if (error) return 0;
+
+  return typeof data === 'number' ? data : 0;
+}
+
+/* -----------------------------------------------------------
+   (Opcional) Revalidar sessão (quando mexe no DB e quer estado fresco)
+----------------------------------------------------------- */
+async function refreshSession() {
+  const { data } = await supabase.auth.getSession();
+  if (!data?.session) return;
+  await supabase.auth.refreshSession();
+}
+
+/* -----------------------------------------------------------
+   Export
+----------------------------------------------------------- */
+export const authService = {
+  login,
+  register,
+  logout,
+  getSession,
+  getCurrentUser,
+  getCurrentPlan,
+  getTrialDaysLeft,
+  refreshSession,
+};
+
+export default authService;

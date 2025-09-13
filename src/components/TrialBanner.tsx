@@ -1,49 +1,62 @@
+// src/components/TrialBanner.tsx
 import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Clock, Crown } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { authService } from '@/lib/auth';
 import { useNavigate } from 'react-router-dom';
 
 const TrialBanner = () => {
-  const [daysLeft, setDaysLeft] = useState(0);
+  const [daysLeft, setDaysLeft] = useState<number | null>(null);
+  const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const days = authService.getTrialDaysLeft();
-    setDaysLeft(days);
+    let alive = true;
+    (async () => {
+      try {
+        // busca assíncrona para evitar "pending"
+        const d = await authService.getTrialDaysLeft();
+        if (alive) setDaysLeft(d);
+      } catch {
+        if (alive) setDaysLeft(0);
+      }
+      try {
+        // ✅ agora com await (antes retornava Promise)
+        const u = await (authService as any).getCurrentUser?.();
+        if (alive) setUser(u ?? null);
+      } catch {
+        if (alive) setUser(null);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
-  const user = authService.getCurrentUser();
-  
-  if (!user || user.plano !== 'trial') {
-    return null;
-  }
+  // ainda carregando
+  if (daysLeft === null) return null;
+
+  // sem usuário, fora de trial, ou trial expirado → não exibe
+  if (!user || user.plano !== 'trial' || daysLeft <= 0) return null;
+
+  const exp = user?.dataExpiracao ? new Date(user.dataExpiracao) : null;
+  const expStr = exp ? exp.toLocaleDateString('pt-BR') : '';
 
   return (
-    <Card className="mb-6 bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-              <Clock className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-orange-900">
-                Período de Teste - {daysLeft} dias restantes
-              </h3>
-              <p className="text-sm text-orange-700">
-                Aproveite todos os recursos gratuitamente até {new Date(user.dataExpiracao).toLocaleDateString('pt-BR')}
-              </p>
-            </div>
+    <Card className="mb-4 bg-amber-50 border-amber-200">
+      <CardContent className="px-4 py-2">
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2 text-amber-800">
+            <Clock className="w-4 h-4" />
+            <span>
+              {daysLeft} dia{daysLeft === 1 ? '' : 's'} restantes do seu teste
+              {expStr ? ` • até ${expStr}` : ''}
+            </span>
           </div>
-          <Button 
+          <button
             onClick={() => navigate('/upgrade')}
-            className="bg-orange-600 hover:bg-orange-700"
+            className="text-amber-800 underline underline-offset-2 hover:opacity-90"
           >
-            <Crown className="w-4 h-4 mr-2" />
-            Fazer Upgrade
-          </Button>
+            assine aqui
+          </button>
         </div>
       </CardContent>
     </Card>

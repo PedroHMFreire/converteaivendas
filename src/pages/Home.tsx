@@ -1,3 +1,4 @@
+// src/pages/Home.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -16,6 +17,9 @@ import {
   Trophy,
   PlusCircle,
 } from "lucide-react";
+
+// 🔹 Aviso sutil de trial + link para upgrade
+import TrialBanner from "@/components/TrialBanner";
 
 const LOCAL_KEY = "converte:vendas:";
 const PREMIO_KEY = "converte:premio-semana:";
@@ -182,13 +186,13 @@ export default function Home() {
 
       // 2) Fallback: backup
       if (!vendasLocais.length) {
-        const { data, error } = await supabase
-          .from("vendas_backup")
-          .select("vendas")
-          .eq("user_id", uid)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .single();
+const { data, error } = await supabase
+  .from("vendas_backup")
+  .select("vendas")
+  .eq("user_id", uid)
+  .order("updated_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
         if (data?.vendas) {
           vendasLocais = data.vendas;
           salvarVendasLocais(uid, vendasLocais);
@@ -204,12 +208,12 @@ export default function Home() {
 
       // Cadastros (lojas e vendedores)
       try {
-        const { data: cad, error: cadErr } = await supabase
-          .from("cadastros")
-          .select("lojas, vendedores")
-          .eq("user_id", uid)
-          .limit(1)
-          .single();
+const { data: cad, error: cadErr } = await supabase
+  .from("cadastros")
+  .select("lojas, vendedores")
+  .eq("user_id", uid)
+  .limit(1)
+  .maybeSingle();
         if (cad) {
           setLojas(cad.lojas || []);
           setVendedores(cad.vendedores || []);
@@ -268,7 +272,6 @@ export default function Home() {
     .slice(0, 6);
 
   // ====== NOVO 1: Atendimentos por data (comparativo entre lojas) ======
-  // top 5 lojas por atendimentos no período; demais => "Outras"
   const palette = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#14b8a6", "#84cc16"];
   const atendimentosPorLojaTotal: Record<string, number> = {};
   vendasFiltradas.forEach(v => {
@@ -389,6 +392,11 @@ export default function Home() {
         <Button onClick={novaVenda} className="inline-flex items-center gap-2">
           <PlusCircle className="w-4 h-4" /> Registrar venda
         </Button>
+      </div>
+
+      {/* 🔹 Aviso sutil de trial (aparece só para quem está em trial) */}
+      <div className="mt-3">
+        <TrialBanner />
       </div>
 
       {/* Filtros */}

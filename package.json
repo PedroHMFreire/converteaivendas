@@ -54,6 +54,7 @@
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
+    "express": "^5.1.0",
     "framer-motion": "^12.23.12",
     "input-otp": "1.4.1",
     "jspdf": "^2.5.1",
@@ -76,7 +77,8 @@
   "devDependencies": {
     "@eslint/js": "^9.15.0",
     "@tailwindcss/typography": "^0.5.16",
-    "@types/node": "^22",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react-swc": "^3.10.1",

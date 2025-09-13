@@ -22,12 +22,28 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setIsLoading(true);
 
     try {
-      await authService.register(formData);
-      showSuccess('Conta criada com sucesso! Bem-vindo ao seu teste gratuito de 7 dias!');
-      navigate('/dashboard');
+      // registra com os campos esperados pelo authService
+const user = await authService.register(
+  formData.email.trim().toLowerCase(),
+  formData.senha
+);
+
+      // marca pós-login (evita “kick” do guard em alguns provedores)
+      localStorage.setItem('auth:justLoggedIn', String(Date.now()));
+
+      showSuccess('Conta criada com sucesso! Bem-vindo ao seu teste gratuito de 3 dias!');
+      // navegação principal para a área logada
+      navigate('/app');
+      // fallback: se o router não trocar (timing), força o replace
+      setTimeout(() => {
+        if (window.location.pathname !== '/app') {
+          window.location.replace('/app');
+        }
+      }, 200);
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Erro ao criar conta');
     } finally {
@@ -43,7 +59,7 @@ const Register = () => {
           <div className="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg">
             <BarChart3 className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-1">Convertê</h1>
+          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-1">Converte.AI</h1>
           <p className="text-gray-700 text-base italic">Crie sua conta para começar</p>
         </div>
 
@@ -55,7 +71,7 @@ const Register = () => {
                 <Gift className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-green-900">7 dias grátis</h3>
+                <h3 className="font-semibold text-green-900">3 dias grátis</h3>
                 <p className="text-sm text-green-700">Teste todos os recursos sem compromisso</p>
               </div>
             </div>
@@ -103,6 +119,7 @@ const Register = () => {
                   placeholder="seu@email.com"
                   required
                   className="bg-white text-gray-900"
+                  autoComplete="email"
                 />
               </div>
 
@@ -130,11 +147,13 @@ const Register = () => {
                     required
                     minLength={6}
                     className="bg-white text-gray-900"
+                    autoComplete="new-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>

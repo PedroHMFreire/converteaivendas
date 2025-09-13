@@ -16,11 +16,26 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setIsLoading(true);
     try {
-      await authService.login(formData);
-      showSuccess('Login realizado com sucesso!');
-      navigate('/dashboard');
+await authService.login(formData.email, formData.senha);
+
+// 🔸 marca que acabamos de logar (o Guard usa isso p/ não te expulsar)
+localStorage.setItem('auth:justLoggedIn', String(Date.now()));
+
+await new Promise((r) => setTimeout(r, 200));
+showSuccess('Login realizado com sucesso!');
+navigate('/app');
+
+// fallback: se o router não trocar, força a troca
+setTimeout(() => {
+  if (window.location.pathname !== '/app') {
+    window.location.replace('/app');
+  }
+}, 250);
+
+
     } catch (error) {
       showError(error instanceof Error ? error.message : 'Erro ao fazer login');
     } finally {
@@ -56,6 +71,7 @@ const Login = () => {
                   placeholder="seu@email.com"
                   required
                   className="bg-white text-gray-900"
+                  autoComplete="email"
                 />
               </div>
 
@@ -70,11 +86,13 @@ const Login = () => {
                     placeholder="Sua senha"
                     required
                     className="bg-white text-gray-900"
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
