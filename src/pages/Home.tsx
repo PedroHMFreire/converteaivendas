@@ -158,6 +158,15 @@ export default function Home() {
   const [premioEdit, setPremioEdit] = useState<string>("");
   const [editandoPremio, setEditandoPremio] = useState(false);
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const insightIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Função de geração de insight automático (exemplo)
+  async function gerarInsightAutomatico() {
+    // Adapte para sua lógica real de insights
+    // Exemplo: toast({ title: "Insight gerado automaticamente!" });
+    // Ou chame sua função de geração de insights IA
+    console.log("Insight gerado automaticamente a cada 3h");
+  }
 
   useEffect(() => {
     (async () => {
@@ -186,13 +195,13 @@ export default function Home() {
 
       // 2) Fallback: backup
       if (!vendasLocais.length) {
-const { data, error } = await supabase
-  .from("vendas_backup")
-  .select("vendas")
-  .eq("user_id", uid)
-  .order("updated_at", { ascending: false })
-  .limit(1)
-  .maybeSingle();
+        const { data, error } = await supabase
+          .from("vendas_backup")
+          .select("vendas")
+          .eq("user_id", uid)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
         if (data?.vendas) {
           vendasLocais = data.vendas;
           salvarVendasLocais(uid, vendasLocais);
@@ -208,12 +217,12 @@ const { data, error } = await supabase
 
       // Cadastros (lojas e vendedores)
       try {
-const { data: cad, error: cadErr } = await supabase
-  .from("cadastros")
-  .select("lojas, vendedores")
-  .eq("user_id", uid)
-  .limit(1)
-  .maybeSingle();
+        const { data: cad, error: cadErr } = await supabase
+          .from("cadastros")
+          .select("lojas, vendedores")
+          .eq("user_id", uid)
+          .limit(1)
+          .maybeSingle();
         if (cad) {
           setLojas(cad.lojas || []);
           setVendedores(cad.vendedores || []);
@@ -228,6 +237,16 @@ const { data: cad, error: cadErr } = await supabase
       setPremioSemana(carregarPremioSemana(uid));
       setPremioEdit(carregarPremioSemana(uid));
     })();
+
+    // Insight automático a cada 3 horas
+    if (insightIntervalRef.current) clearInterval(insightIntervalRef.current);
+    insightIntervalRef.current = setInterval(() => {
+      gerarInsightAutomatico();
+    }, 3 * 60 * 60 * 1000); // 3 horas
+
+    return () => {
+      if (insightIntervalRef.current) clearInterval(insightIntervalRef.current);
+    };
   }, []);
 
   // Backup automático a cada 30min
@@ -613,9 +632,14 @@ const { data: cad, error: cadErr } = await supabase
                 }
               }}
             >
+              <label className="block text-xs font-bold mb-1">Data</label>
               <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="date" value={editingVenda.data} onChange={(e) => setEditingVenda({ ...editingVenda, data: e.target.value })} required />
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Atendimentos" value={editingVenda.atendimentos} onChange={(e) => handleAtendimentosChange(Number(e.target.value))} min={0} required />
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Vendas" value={editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
+
+              <label className="block text-xs font-bold mb-1">Atendimentos</label>
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Insira a quantidade de atendimentos" value={editingVenda.atendimentos === 0 ? "" : editingVenda.atendimentos} onChange={(e) => handleAtendimentosChange(Number(e.target.value))} min={0} required />
+
+              <label className="block text-xs font-bold mb-1">Vendas</label>
+              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Insira a quantidade de vendas" value={editingVenda.vendas === 0 ? "" : editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
               <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.vendedorId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, vendedorId: e.target.value })} required>
                 <option value="">Selecione o vendedor</option>
                 {vendedores.map((v) => (<option key={v.id} value={v.id}>{v.nome}</option>))}
