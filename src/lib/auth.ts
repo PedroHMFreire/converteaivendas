@@ -91,7 +91,7 @@ async function getCurrentUser(): Promise<AppUser | null> {
 
   const { data: pData, error: profileError } = await supabase
     .from('v_profiles_access')
-    .select('user_id, email, plan_type, ativo, expires_at')
+  .select('user_id, email, plan_type, ativo, expires_at, plano, plano_recorrencia, data_expiracao')
     .eq('user_id', uid)
     .single();
 
@@ -110,17 +110,34 @@ async function getCurrentUser(): Promise<AppUser | null> {
     timestamp: new Date().toISOString()
   });
 
-  // Mapear plan_type para plano
-  const planoMapeado: AppPlan = profile?.plan_type === 'mensal' ? 'basic' :
-                                profile?.plan_type === 'anual' ? 'premium' :
-                                profile?.plan_type === 'trimestral' ? 'basic' :
-                                'trial';
+  // Normalizar expiracao e mapeamentos com fallback
+  const planTypeRaw: string | null = (profile?.plan_type ?? null) as string | null;
+  const planoDbRaw: string | null = (profile?.plano ?? null) as string | null; // 'basic' | 'premium' | null
+  const recRaw: string | null = (profile?.plano_recorrencia ?? null) as string | null; // 'mensal' | 'trimestral' | 'anual' | null
+  const expiresRaw: string | null = (profile?.expires_at ?? profile?.data_expiracao ?? null) as string | null;
+  const expiresDate = expiresRaw ? new Date(expiresRaw) : null;
+  const isActive = !!(expiresDate && expiresDate.getTime() > Date.now());
+
+  const mapFromPlanType = (t?: string | null): AppPlan =>
+    t === 'anual' ? 'premium' : t === 'mensal' || t === 'trimestral' ? 'basic' : 'trial';
+  const mapFromPlanoDb = (p?: string | null): AppPlan =>
+    p === 'premium' ? 'premium' : p === 'basic' ? 'basic' : 'trial';
+
+  let planoMapeado: AppPlan = 'trial';
+  if (planTypeRaw && isActive) {
+    planoMapeado = mapFromPlanType(planTypeRaw);
+  } else if (isActive && (planoDbRaw === 'basic' || planoDbRaw === 'premium')) {
+    // Fallback quando a view ainda não refletiu plan_type/expires_at, mas profiles já tem plano/data_expiracao
+    planoMapeado = mapFromPlanoDb(planoDbRaw);
+  } else {
+    planoMapeado = 'trial';
+  }
 
   return {
     id: uid,
     email,
     plano: planoMapeado,
-    dataExpiracao: profile?.expires_at ?? null,
+  dataExpiracao: expiresRaw,
     nome: (uData.user.user_metadata as any)?.nome ?? null,
     empresa: (uData.user.user_metadata as any)?.empresa ?? null,
   };
@@ -140,7 +157,7 @@ async function getCurrentPlan(): Promise<AppPlan> {
 
   const { data, error } = await supabase
     .from('v_profiles_access')
-    .select('plan_type')
+  .select('plan_type, plano, plano_recorrencia, expires_at, data_expiracao')
     .eq('user_id', uData.user.id)
     .single();
 
@@ -149,12 +166,25 @@ async function getCurrentPlan(): Promise<AppPlan> {
     return 'unknown';
   }
 
-  // Mapear plan_type para AppPlan
-  const planType = (data as any)?.plan_type;
-  const plan: AppPlan = planType === 'mensal' ? 'basic' :
-                        planType === 'anual' ? 'premium' :
-                        planType === 'trimestral' ? 'basic' :
-                        'trial';
+  // Mapear com fallback (usar plan_type/expires_at; se ausentes, usar plano/data_expiracao)
+  const p = (data as any) || {};
+  const planType: string | null = (p.plan_type ?? null) as string | null;
+  const planoDb: string | null = (p.plano ?? null) as string | null;
+  const expiresRaw: string | null = (p.expires_at ?? p.data_expiracao ?? null) as string | null;
+  const expiresDate = expiresRaw ? new Date(expiresRaw) : null;
+  const isActive = !!(expiresDate && expiresDate.getTime() > Date.now());
+
+  const mapFromPlanType = (t?: string | null): AppPlan =>
+    t === 'anual' ? 'premium' : t === 'mensal' || t === 'trimestral' ? 'basic' : 'trial';
+
+  let plan: AppPlan = 'trial';
+  if (planType && isActive) {
+    plan = mapFromPlanType(planType);
+  } else if (isActive && (planoDb === 'basic' || planoDb === 'premium')) {
+    plan = (planoDb as 'basic' | 'premium');
+  } else {
+    plan = 'trial';
+  }
 
   console.log("✅ getCurrentPlan: Resultado", {
     userId: uData.user.id,
