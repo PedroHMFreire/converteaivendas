@@ -82,13 +82,23 @@ async function getCurrentUser(): Promise<AppUser | null> {
   const email = uData.user.email ?? null;
 
   // 🔥 FORÇAR refresh do cache do Supabase para garantir dados atualizados
-  await supabase.from('profiles').select('*').eq('user_id', uid).single();
+  // Primeiro, fazer uma consulta dummy para invalidar cache
+  try {
+    await supabase.from('profiles').select('user_id').eq('user_id', uid).limit(1);
+  } catch (e) {
+    console.warn("⚠️ Erro ao invalidar cache:", e);
+  }
 
-  const { data: pData } = await supabase
+  const { data: pData, error: profileError } = await supabase
     .from('profiles')
     .select('user_id, email, plano, ativo, data_expiracao')
     .eq('user_id', uid)
     .single();
+
+  if (profileError) {
+    console.error("❌ Erro ao buscar perfil:", profileError);
+    return null;
+  }
 
   const profile = (pData ?? null) as AppProfile | null;
 
@@ -96,7 +106,8 @@ async function getCurrentUser(): Promise<AppUser | null> {
     userId: uid,
     plano: profile?.plano,
     dataExpiracao: profile?.data_expiracao,
-    ativo: profile?.ativo
+    ativo: profile?.ativo,
+    timestamp: new Date().toISOString()
   });
 
   return {
@@ -114,7 +125,12 @@ async function getCurrentUser(): Promise<AppUser | null> {
 ----------------------------------------------------------- */
 async function getCurrentPlan(): Promise<AppPlan> {
   const { data: uData } = await supabase.auth.getUser();
-  if (!uData?.user) return 'unknown';
+  if (!uData?.user) {
+    console.log("🔍 getCurrentPlan: Usuário não autenticado");
+    return 'unknown';
+  }
+
+  console.log("🔍 getCurrentPlan: Buscando plano para user", uData.user.id);
 
   const { data, error } = await supabase
     .from('profiles')
@@ -122,8 +138,20 @@ async function getCurrentPlan(): Promise<AppPlan> {
     .eq('user_id', uData.user.id)
     .single();
 
-  if (error) return 'unknown';
-  return (data?.plano ?? 'unknown') as AppPlan;
+  if (error) {
+    console.error("❌ getCurrentPlan: Erro ao buscar plano", error);
+    return 'unknown';
+  }
+
+  const plan = (data?.plano ?? 'unknown') as AppPlan;
+  console.log("✅ getCurrentPlan: Resultado", {
+    userId: uData.user.id,
+    plan,
+    rawData: data,
+    timestamp: new Date().toISOString()
+  });
+
+  return plan;
 }
 
 /* -----------------------------------------------------------
@@ -131,12 +159,48 @@ async function getCurrentPlan(): Promise<AppPlan> {
 ----------------------------------------------------------- */
 async function getTrialDaysLeft(): Promise<number> {
   const { data: uData } = await supabase.auth.getUser();
-  if (!uData?.user) return 0;
+  if (!uData?.user) {
+    console.log("🔍 getTrialDaysLeft: Usuário não autenticado");
+    return 0;
+  }
+
+  console.log("🔍 getTrialDaysLeft: Chamando RPC para user", uData.user.id);
 
   const { data, error } = await supabase.rpc('trial_days_left', { p_user: uData.user.id });
-  if (error) return 0;
 
-  return typeof data === 'number' ? data : 0;
+  if (error) {
+    console.error("❌ getTrialDaysLeft: Erro na RPC", error);
+    return 0;
+  }
+
+  const days = typeof data === 'number' ? data : 0;
+  console.log("✅ getTrialDaysLeft: Resultado", {
+    userId: uData.user.id,
+    days,
+    rawData: data,
+    timestamp: new Date().toISOString()
+  });
+
+  return days;
+}
+
+/* -----------------------------------------------------------
+   Limpeza completa do cache (usar em casos extremos)
+----------------------------------------------------------- */
+async function clearCache(): Promise<void> {
+  console.log("🧹 Limpando cache do Supabase...");
+
+  try {
+    // Limpar cache de autenticação
+    await supabase.auth.signOut({ scope: 'local' });
+    await supabase.auth.signInAnonymously();
+
+    // Forçar reload da página para limpar todos os caches
+    console.log("✅ Cache limpo, recarregando página...");
+    window.location.reload();
+  } catch (error) {
+    console.error("❌ Erro ao limpar cache:", error);
+  }
 }
 
 /* -----------------------------------------------------------
@@ -152,29 +216,38 @@ async function refreshSession() {
    Forçar refresh dos dados do usuário (após mudanças no DB)
 ----------------------------------------------------------- */
 async function refreshUserData(): Promise<AppUser | null> {
-  console.log("🔄 Forçando refresh dos dados do usuário...");
+  console.log("🔄 Iniciando refreshUserData...");
 
-  // Primeiro, tenta refresh da sessão
-  await refreshSession();
+  try {
+    // Primeiro, tenta refresh da sessão
+    await refreshSession();
+    console.log("✅ Sessão refreshada");
 
-  // Depois busca os dados atualizados
-  const user = await getCurrentUser();
+    // Depois busca os dados atualizados
+    const user = await getCurrentUser();
 
-  // Emite evento para notificar componentes
-  if (user) {
+    if (!user) {
+      console.warn("⚠️ refreshUserData: Usuário não encontrado após refresh");
+      return null;
+    }
+
     console.log("✅ Dados do usuário atualizados:", {
       plano: user.plano,
-      dataExpiracao: user.dataExpiracao
+      dataExpiracao: user.dataExpiracao,
+      timestamp: new Date().toISOString()
     });
 
     // Import dinâmico para evitar dependências circulares
-    import('./events').then(({ userEvents, USER_EVENTS }) => {
-      userEvents.emit(USER_EVENTS.PROFILE_UPDATED, user);
-      userEvents.emit(USER_EVENTS.STATUS_CHANGED, user);
-    });
-  }
+    const { userEvents, USER_EVENTS } = await import('./events');
+    userEvents.emit(USER_EVENTS.PROFILE_UPDATED, user);
+    userEvents.emit(USER_EVENTS.STATUS_CHANGED, user);
+    console.log("📡 Eventos emitidos para componentes");
 
-  return user;
+    return user;
+  } catch (error) {
+    console.error("❌ Erro em refreshUserData:", error);
+    return null;
+  }
 }
 
 /* -----------------------------------------------------------
@@ -190,6 +263,7 @@ export const authService = {
   getTrialDaysLeft,
   refreshSession,
   refreshUserData,
+  clearCache,
 };
 
 export default authService;
