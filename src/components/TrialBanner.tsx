@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Clock } from 'lucide-react';
 import { authService } from '@/lib/auth';
 import { useNavigate } from 'react-router-dom';
+import { userEvents, USER_EVENTS } from '@/lib/events';
 
 const TrialBanner = () => {
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
@@ -29,6 +30,29 @@ const TrialBanner = () => {
       }
     })();
     return () => { alive = false; };
+  }, []);
+
+  // Escutar mudanças no status do usuário
+  useEffect(() => {
+    const handleStatusChange = (updatedUser: any) => {
+      console.log("🔄 TrialBanner: Status do usuário mudou", updatedUser);
+      setUser(updatedUser);
+
+      // Recalcular dias restantes
+      authService.getTrialDaysLeft().then(days => {
+        setDaysLeft(days);
+      }).catch(() => {
+        setDaysLeft(0);
+      });
+    };
+
+    userEvents.on(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+    userEvents.on(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+
+    return () => {
+      userEvents.off(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+      userEvents.off(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+    };
   }, []);
 
   // ainda carregando

@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useTheme } from 'next-themes';
+import { userEvents, USER_EVENTS } from '@/lib/events';
 
 type AppUser = {
   id: string;
@@ -84,6 +85,33 @@ const Header = () => {
     })();
     return () => {
       alive = false;
+    };
+  }, []);
+
+  // Escutar mudanças no status do usuário
+  useEffect(() => {
+    const handleStatusChange = async () => {
+      console.log("🔄 Header: Status do usuário mudou, atualizando dados...");
+
+      try {
+        const p = await authService.getCurrentPlan();
+        const d = await authService.getTrialDaysLeft();
+        setPlan(p as any);
+        setDaysLeft(typeof d === 'number' ? d : 0);
+        console.log("✅ Header: Dados atualizados", { plan: p, daysLeft: d });
+      } catch (error) {
+        console.error("❌ Header: Erro ao atualizar dados", error);
+        setPlan('unknown');
+        setDaysLeft(0);
+      }
+    };
+
+    userEvents.on(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+    userEvents.on(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+
+    return () => {
+      userEvents.off(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+      userEvents.off(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
     };
   }, []);
 

@@ -139,6 +139,35 @@ async function refreshSession() {
 }
 
 /* -----------------------------------------------------------
+   Forçar refresh dos dados do usuário (após mudanças no DB)
+----------------------------------------------------------- */
+async function refreshUserData(): Promise<AppUser | null> {
+  console.log("🔄 Forçando refresh dos dados do usuário...");
+
+  // Primeiro, tenta refresh da sessão
+  await refreshSession();
+
+  // Depois busca os dados atualizados
+  const user = await getCurrentUser();
+
+  // Emite evento para notificar componentes
+  if (user) {
+    console.log("✅ Dados do usuário atualizados:", {
+      plano: user.plano,
+      dataExpiracao: user.dataExpiracao
+    });
+
+    // Import dinâmico para evitar dependências circulares
+    import('./events').then(({ userEvents, USER_EVENTS }) => {
+      userEvents.emit(USER_EVENTS.PROFILE_UPDATED, user);
+      userEvents.emit(USER_EVENTS.STATUS_CHANGED, user);
+    });
+  }
+
+  return user;
+}
+
+/* -----------------------------------------------------------
    Export
 ----------------------------------------------------------- */
 export const authService = {
@@ -150,6 +179,7 @@ export const authService = {
   getCurrentPlan,
   getTrialDaysLeft,
   refreshSession,
+  refreshUserData,
 };
 
 export default authService;

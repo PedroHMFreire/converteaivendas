@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { authService } from "@/lib/auth";
+import { userEvents, USER_EVENTS } from "@/lib/events";
 
 const PUBLIC_ROUTES = new Set<string>([
   "/login", "/register", "/landing", "/upgrade", "/billing/success",
@@ -83,6 +84,23 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     return () => { cancelled = true; };
   }, [loc.pathname, navigate]);
+
+  // Escutar mudanças no status do usuário
+  useEffect(() => {
+    const handleStatusChange = () => {
+      console.log("🔄 AuthGuard: Status do usuário mudou, re-verificando...");
+      // Forçar re-execução da verificação
+      setReady(false);
+    };
+
+    userEvents.on(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+    userEvents.on(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+
+    return () => {
+      userEvents.off(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
+      userEvents.off(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+    };
+  }, []);
 
   if (!ready) return null;
   return <>{children}</>;

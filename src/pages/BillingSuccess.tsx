@@ -2,15 +2,24 @@ import { useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { CheckCircle2, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { authService } from "@/lib/auth";
 
 export default function BillingSuccess() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // (Opcional) Se quiser, chame um endpoint para sincronizar o status logo após o retorno:
-    // (async () => {
-    //   try { await fetch("/api/billing/mercadopago/sync", { method: "POST" }); } catch {}
-    // })();
+    // Atualizar dados do usuário após confirmação do pagamento
+    const updateUserData = async () => {
+      try {
+        console.log("🔄 Atualizando dados do usuário após pagamento...");
+        await authService.refreshUserData();
+        console.log("✅ Dados do usuário atualizados com sucesso");
+      } catch (error) {
+        console.error("❌ Erro ao atualizar dados do usuário:", error);
+      }
+    };
+
+    updateUserData();
   }, []);
 
   return (
