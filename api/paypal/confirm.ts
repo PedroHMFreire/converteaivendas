@@ -94,8 +94,9 @@ export default async function handler(req: any, res: any) {
     await supabase
       .from("profiles")
       .update({
-        plan_type: plan, // 'mensal' | 'trimestral' | 'anual'
-        expires_at: newExpires.toISOString(),
+        plano: plan === "mensal" ? "basic" : plan === "anual" ? "premium" : "basic", // Mapear para AppPlan
+        data_expiracao: newExpires.toISOString(),
+        plano_recorrencia: plan, // 'mensal' | 'trimestral' | 'anual'
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId);
