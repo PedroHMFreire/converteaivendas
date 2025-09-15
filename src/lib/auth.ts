@@ -8,7 +8,7 @@ export type AppProfile = {
   email: string | null;
   plano: AppPlan;
   ativo: boolean | null;
-  data_expiracao: string | null; // DATE no banco (string no client)
+  expires_at: string | null; // DATE no banco (string no client)
   mp_preapproval_id?: string | null;
   plano_recorrencia?: 'mensal' | 'trimestral' | 'anual' | null;
 };
@@ -91,7 +91,7 @@ async function getCurrentUser(): Promise<AppUser | null> {
 
   const { data: pData, error: profileError } = await supabase
     .from('v_profiles_access')
-    .select('user_id, email, plano, ativo, data_expiracao')
+    .select('user_id, email, plan_type, ativo, expires_at')
     .eq('user_id', uid)
     .single();
 
@@ -100,21 +100,27 @@ async function getCurrentUser(): Promise<AppUser | null> {
     return null;
   }
 
-  const profile = (pData ?? null) as AppProfile | null;
+  const profile = (pData ?? null) as any; // View retorna estrutura diferente
 
   console.log("🔍 getCurrentUser: Dados do perfil", {
     userId: uid,
-    plano: profile?.plano,
-    dataExpiracao: profile?.data_expiracao,
+    plan_type: profile?.plan_type,
+    expires_at: profile?.expires_at,
     ativo: profile?.ativo,
     timestamp: new Date().toISOString()
   });
 
+  // Mapear plan_type para plano
+  const planoMapeado: AppPlan = profile?.plan_type === 'mensal' ? 'basic' :
+                                profile?.plan_type === 'anual' ? 'premium' :
+                                profile?.plan_type === 'trimestral' ? 'basic' :
+                                'trial';
+
   return {
     id: uid,
     email,
-    plano: (profile?.plano ?? 'unknown') as AppPlan,
-    dataExpiracao: profile?.data_expiracao ?? null,
+    plano: planoMapeado,
+    dataExpiracao: profile?.expires_at ?? null,
     nome: (uData.user.user_metadata as any)?.nome ?? null,
     empresa: (uData.user.user_metadata as any)?.empresa ?? null,
   };
@@ -134,7 +140,7 @@ async function getCurrentPlan(): Promise<AppPlan> {
 
   const { data, error } = await supabase
     .from('v_profiles_access')
-    .select('plano')
+    .select('plan_type')
     .eq('user_id', uData.user.id)
     .single();
 
@@ -143,12 +149,18 @@ async function getCurrentPlan(): Promise<AppPlan> {
     return 'unknown';
   }
 
-  const plan = (data?.plano ?? 'unknown') as AppPlan;
+  // Mapear plan_type para AppPlan
+  const planType = (data as any)?.plan_type;
+  const plan: AppPlan = planType === 'mensal' ? 'basic' :
+                        planType === 'anual' ? 'premium' :
+                        planType === 'trimestral' ? 'basic' :
+                        'trial';
+
   console.log("✅ getCurrentPlan: Resultado", {
     userId: uData.user.id,
     plan,
+    planType: planType,
     rawData: data,
-    planoValue: data?.plano,
     timestamp: new Date().toISOString()
   });
 

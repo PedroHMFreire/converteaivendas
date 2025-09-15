@@ -82,12 +82,12 @@ export default async function handler(req: any, res: any) {
     // Empilhar validade em profiles (usar v_profiles_access para leitura)
     const { data: prof } = await supabase
       .from("v_profiles_access")
-      .select("data_expiracao")
+      .select("expires_at")
       .eq("user_id", userId)
       .single();
 
     const now = new Date();
-    const base = prof?.data_expiracao ? new Date(prof.data_expiracao) : now;
+    const base = prof?.expires_at ? new Date(prof.expires_at) : now;
     const start = base > now ? base : now;
     const newExpires = months > 0 ? addMonths(start, months) : start;
 
