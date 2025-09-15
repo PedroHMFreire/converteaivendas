@@ -34,16 +34,26 @@ const TrialBanner = () => {
 
   // Escutar mudanças no status do usuário
   useEffect(() => {
-    const handleStatusChange = (updatedUser: any) => {
-      console.log("🔄 TrialBanner: Status do usuário mudou", updatedUser);
-      setUser(updatedUser);
+    const handleStatusChange = async (updatedUser: any) => {
+      console.log("🔄 TrialBanner: Recebido evento de mudança", updatedUser);
 
-      // Recalcular dias restantes
-      authService.getTrialDaysLeft().then(days => {
+      if (updatedUser) {
+        setUser(updatedUser);
+        console.log("✅ TrialBanner: Usuário atualizado", {
+          plano: updatedUser.plano,
+          dataExpiracao: updatedUser.dataExpiracao
+        });
+      }
+
+      // Sempre recalcular dias restantes após mudança
+      try {
+        const days = await authService.getTrialDaysLeft();
         setDaysLeft(days);
-      }).catch(() => {
+        console.log("✅ TrialBanner: Dias recalculados", days);
+      } catch (error) {
+        console.error("❌ TrialBanner: Erro ao recalcular dias", error);
         setDaysLeft(0);
-      });
+      }
     };
 
     userEvents.on(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
@@ -55,11 +65,26 @@ const TrialBanner = () => {
     };
   }, []);
 
-  // ainda carregando
-  if (daysLeft === null) return null;
+  // ainda carregando dados
+  if (daysLeft === null || !user) return null;
 
-  // sem usuário, fora de trial, ou trial expirado → não exibe
-  if (!user || user.plano !== 'trial' || daysLeft <= 0) return null;
+  // só mostra se usuário está em trial ATIVO (plano = trial E dias restantes > 0)
+  const shouldShow = user.plano === 'trial' && daysLeft > 0;
+
+  if (!shouldShow) {
+    console.log("🔍 TrialBanner: Não exibindo banner", {
+      plano: user.plano,
+      daysLeft,
+      shouldShow
+    });
+    return null;
+  }
+
+  console.log("✅ TrialBanner: Exibindo banner", {
+    plano: user.plano,
+    daysLeft,
+    shouldShow
+  });
 
   const exp = user?.dataExpiracao ? new Date(user.dataExpiracao) : null;
   const expStr = exp ? exp.toLocaleDateString('pt-BR') : '';

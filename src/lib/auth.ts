@@ -81,6 +81,9 @@ async function getCurrentUser(): Promise<AppUser | null> {
   const uid = uData.user.id;
   const email = uData.user.email ?? null;
 
+  // 🔥 FORÇAR refresh do cache do Supabase para garantir dados atualizados
+  await supabase.from('profiles').select('*').eq('user_id', uid).single();
+
   const { data: pData } = await supabase
     .from('profiles')
     .select('user_id, email, plano, ativo, data_expiracao')
@@ -88,6 +91,13 @@ async function getCurrentUser(): Promise<AppUser | null> {
     .single();
 
   const profile = (pData ?? null) as AppProfile | null;
+
+  console.log("🔍 getCurrentUser: Dados do perfil", {
+    userId: uid,
+    plano: profile?.plano,
+    dataExpiracao: profile?.data_expiracao,
+    ativo: profile?.ativo
+  });
 
   return {
     id: uid,
