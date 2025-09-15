@@ -101,24 +101,31 @@ export default async function handler(req: any, res: any) {
       })
       .eq("user_id", userId);
 
-    // Histórico (idempotente por payment_id)
+    // Histórico (idempotente por payment_id) — insere ou atualiza
     const { data: existing } = await supabase
       .from("subscriptions")
       .select("id")
       .eq("payment_id", paymentId)
       .maybeSingle();
 
+    const subRow = {
+      user_id: userId,
+      plan_type: plan,
+      period_start: start.toISOString(),
+      period_end: newExpires.toISOString(),
+      amount: Number(capture?.amount?.value || 0),
+      currency: String(capture?.amount?.currency_code || "BRL"),
+      payment_status: status,
+      payment_id: paymentId,
+    } as const;
+
     if (!existing) {
-      await supabase.from("subscriptions").insert({
-        user_id: userId,
-        plan_type: plan,
-        period_start: start.toISOString(),
-        period_end: newExpires.toISOString(),
-        amount: Number(capture?.amount?.value || 0),
-        currency: String(capture?.amount?.currency_code || "BRL"),
-        payment_status: status,
-        payment_id: paymentId,
-      });
+      await supabase.from("subscriptions").insert(subRow);
+    } else {
+      await supabase
+        .from("subscriptions")
+        .update(subRow)
+        .eq("payment_id", paymentId);
     }
 
     return res.status(200).json({
