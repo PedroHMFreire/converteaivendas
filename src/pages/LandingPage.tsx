@@ -380,14 +380,13 @@ const LandingPage = () => {
               <ul className="space-y-2 text-gray-400">
                 <li><button onClick={() => navigate('/#features')}>Funcionalidades</button></li>
                 <li><button onClick={() => navigate('/upgrade')}>Preços</button></li>
-                <li>Demonstração</li>
               </ul>
             </div>
             <div>
               <h3 className="font-semibold mb-4">Suporte</h3>
               <ul className="space-y-2 text-gray-400">
                 <li>Central de Ajuda</li>
-                <li>Contato</li>
+                <li>Contato: 98-991839898</li>
                 <li>Treinamento</li>
               </ul>
             </div>
@@ -395,8 +394,6 @@ const LandingPage = () => {
               <h3 className="font-semibold mb-4">Empresa</h3>
               <ul className="space-y-2 text-gray-400">
                 <li>Sobre</li>
-                <li>Blog</li>
-                <li>Carreiras</li>
               </ul>
             </div>
           </div>

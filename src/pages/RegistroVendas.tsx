@@ -628,12 +628,18 @@ export default function RegistroVendas() {
                 }
               }}
             >
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="date" value={editingVenda.data} onChange={(e) => setEditingVenda({ ...editingVenda, data: e.target.value })} required />
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Atendimentos" value={editingVenda.atendimentos} onChange={(e) => handleAtendimentosChange(Number(e.target.value))} min={0} required />
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Vendas" value={editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
+    <label className="block text-xs font-bold mb-1">Data</label>
+    <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="date" value={editingVenda.data} onChange={(e) => setEditingVenda({ ...editingVenda, data: e.target.value })} required />
 
-              <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Valor total (R$)" value={editingVenda.valor ?? 0}
-                     onChange={(e) => setEditingVenda({ ...editingVenda, valor: Number(e.target.value) })} min={0} />
+    <label className="block text-xs font-bold mb-1">Atendimentos</label>
+    <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Insira a quantidade de atendimentos" value={editingVenda.atendimentos === 0 ? "" : editingVenda.atendimentos} onChange={(e) => handleAtendimentosChange(Number(e.target.value))} min={0} required />
+
+    <label className="block text-xs font-bold mb-1">Vendas</label>
+    <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Insira a quantidade de vendas" value={editingVenda.vendas === 0 ? "" : editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
+
+    <label className="block text-xs font-bold mb-1">Valor total (R$)</label>
+    <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Valor total (R$)" value={editingVenda.valor === 0 ? "" : editingVenda.valor ?? ""}
+      onChange={(e) => setEditingVenda({ ...editingVenda, valor: Number(e.target.value) })} min={0} />
 
               <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.vendedorId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, vendedorId: e.target.value })} required>
                 <option value="">Selecione o vendedor</option>
