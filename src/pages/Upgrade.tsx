@@ -183,6 +183,8 @@ export default function Upgrade() {
   const [isLoading, setIsLoading] = useState(false);
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
   const [showButtons, setShowButtons] = useState(false);
+  const [sdkReady, setSdkReady] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
   const navigate = useNavigate();
@@ -212,6 +214,32 @@ export default function Upgrade() {
       }
     })();
   }, []);
+
+  // Pré-carrega o SDK do PayPal para evitar falha no primeiro clique
+  useEffect(() => {
+    (async () => {
+      try {
+        await ensurePaypalSdk();
+        setSdkReady(true);
+        console.log("✅ SDK PayPal pronto (preload)");
+      } catch (e) {
+        console.error("❌ Falha ao preparar SDK PayPal", e);
+        setSdkReady(false);
+      }
+    })();
+  }, []);
+
+  // Renderiza os botões após termos orderId e container no DOM
+  useEffect(() => {
+    if (!showButtons || !orderId || !sdkReady) return;
+    // aguarda o próximo frame para garantir que o ref foi anexado
+    const id = requestAnimationFrame(() => {
+      renderPayPalButtons(orderId).catch((e) => {
+        console.error("❌ Falha ao renderizar botões PayPal pós-state", e);
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [showButtons, orderId, sdkReady]);
 
   async function renderPayPalButtons(orderID: string) {
     const paypal = (window as any).paypal;
@@ -258,7 +286,10 @@ export default function Upgrade() {
     setIsLoading(true);
     try {
       console.log("🔧 Garantindo PayPal SDK...");
-      await ensurePaypalSdk();
+      if (!sdkReady) {
+        await ensurePaypalSdk();
+        setSdkReady(true);
+      }
       console.log("✅ SDK garantido, criando ordem...");
 
       const r = await fetch("/api/paypal/create-order", {
@@ -271,9 +302,9 @@ export default function Upgrade() {
         throw new Error(json?.error || "Erro ao criar a ordem de pagamento.");
       }
       console.log("📋 Ordem criada:", json.orderID);
+      setOrderId(json.orderID);
       setShowButtons(true);
-      await renderPayPalButtons(json.orderID);
-      console.log("🎉 Botões PayPal renderizados com sucesso");
+      console.log("🧩 Sinalizado para renderizar botões PayPal");
     } catch (e: any) {
       console.error("💥 Erro no handleUpgrade:", e);
       console.error("🔍 Detalhes do erro:", {
@@ -360,12 +391,15 @@ export default function Upgrade() {
           </ul>
 
           <div className="mt-8 flex flex-col items-center gap-3 w-full">
-            <Button className="w-full sm:w-auto" disabled={isLoading} onClick={handleUpgrade}>
+            <Button className="w-full sm:w-auto" disabled={isLoading || !userId || !sdkReady} onClick={handleUpgrade}>
               <CreditCard className="w-4 h-4 mr-2" />
               Assinar plano {selectedPlan.label}
             </Button>
 
-            {showButtons && <div className="w-full sm:w-auto mt-2"><div ref={paypalButtonsRef} /></div>}
+            {/* Mantém o container sempre montado para o ref estar disponível no primeiro clique */}
+            <div className="w-full sm:w-auto mt-2" style={{ display: showButtons ? 'block' : 'none' }}>
+              <div ref={paypalButtonsRef} />
+            </div>
 
             <p className="text-xs text-gray-500 flex items-center gap-2">
               <Shield className="w-3 h-3" /> Garantia de 30 dias — cancele quando quiser
