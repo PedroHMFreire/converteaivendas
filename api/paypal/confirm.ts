@@ -32,7 +32,7 @@ export default async function handler(req: any, res: any) {
     const { orderID } = (req.body || {}) as { orderID?: string };
     if (!orderID) return res.status(400).json({ error: "orderID obrigatório" });
 
-    // 1) OAuth2
+    // OAuth
     const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString("base64");
     const tokenResp = await fetch(`${baseURL}/v1/oauth2/token`, {
       method: "POST",
@@ -43,7 +43,7 @@ export default async function handler(req: any, res: any) {
     if (!tokenResp.ok) return res.status(400).json({ error: "paypal_oauth_error", details: tokenJson });
     const accessToken = tokenJson.access_token as string;
 
-    // 2) Capturar a Order (se já estiver capturada, PayPal retorna estado atual)
+    // Capturar
     const capResp = await fetch(`${baseURL}/v2/checkout/orders/${orderID}/capture`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -51,42 +51,35 @@ export default async function handler(req: any, res: any) {
     const capJson = await capResp.json();
     if (!capResp.ok) return res.status(400).json({ error: "paypal_capture_error", details: capJson });
 
-    // 3) Extrair dados
-    const status = capJson.status as string; // COMPLETED, etc.
+    const status = capJson.status as string; // COMPLETED
     const pu = Array.isArray(capJson.purchase_units) ? capJson.purchase_units[0] : undefined;
-    const customId: string = (pu?.payments?.captures?.[0]?.custom_id || pu?.custom_id || "") as string;
-    // fallback: se o capture não ecoar custom_id, use da order original:
-    const orderResp = !customId
-      ? await fetch(`${baseURL}/v2/checkout/orders/${orderID}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        })
-      : null;
-    const orderJson = orderResp ? await orderResp.json() : null;
-    const finalCustom =
-      customId ||
-      (orderJson?.purchase_units?.[0]?.custom_id as string) ||
-      "";
 
+    // custom_id pode estar no capture ou na order
+    const customFromCapture: string =
+      (pu?.payments?.captures?.[0]?.custom_id || pu?.custom_id || "") as string;
+
+    let finalCustom = customFromCapture;
     if (!finalCustom) {
-      return res.status(202).json({ ok: true, where: "no-custom-id", status });
+      const orderResp = await fetch(`${baseURL}/v2/checkout/orders/${orderID}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const orderJson = await orderResp.json();
+      finalCustom = (orderJson?.purchase_units?.[0]?.custom_id as string) || "";
     }
+    if (!finalCustom) return res.status(202).json({ ok: true, where: "no-custom-id", status });
 
     const [userId, planRaw] = finalCustom.split("|");
     const plan = (planRaw || "").toLowerCase();
     const months = monthsForPlan(plan);
 
-    // Idempotência simples: obter capture_id (se existir)
-    const capture =
-      pu?.payments?.captures?.[0] ||
-      orderJson?.purchase_units?.[0]?.payments?.captures?.[0] ||
-      null;
+    const capture = pu?.payments?.captures?.[0] || null;
     const paymentId = String(capture?.id || orderID);
 
     if (status !== "COMPLETED") {
       return res.status(200).json({ ok: true, status, ignore: true });
     }
 
-    // 4) Atualizar profiles (empilhar validade)
+    // Empilhar validade em profiles
     const { data: prof } = await supabase
       .from("profiles")
       .select("expires_at")
@@ -107,7 +100,7 @@ export default async function handler(req: any, res: any) {
       })
       .eq("user_id", userId);
 
-    // 5) Registrar histórico (ignora duplicata do mesmo payment_id)
+    // Histórico (idempotente por payment_id)
     const { data: existing } = await supabase
       .from("subscriptions")
       .select("id")
@@ -121,7 +114,7 @@ export default async function handler(req: any, res: any) {
         period_start: start.toISOString(),
         period_end: newExpires.toISOString(),
         amount: Number(capture?.amount?.value || 0),
-        currency: String(capture?.amount?.currency_code || "USD"),
+        currency: String(capture?.amount?.currency_code || "BRL"),
         payment_status: status,
         payment_id: paymentId,
       });
