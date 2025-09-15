@@ -20,7 +20,7 @@ type RecurrenceOption = {
   destaque: string | null;
 };
 
-/** Tabela exibida na UI (valores meramente informativos). O pagamento real em USD é definido no backend. */
+/** Tabela exibida na UI (valores meramente informativos). O pagamento real em BRL é definido no backend. */
 const recurrenceOptions: RecurrenceOption[] = [
   { id: "mensal", label: "Mensal", valorMensal: 49.9, totalCiclo: 49.9, cicloLabel: "Cobrança mensal", economia: null, destaque: null },
   { id: "trimestral", label: "Trimestral", valorMensal: 44.9, totalCiclo: 134.7, cicloLabel: "Cobramos a cada 3 meses", economia: "10%", destaque: "Mais vendido" },
@@ -39,8 +39,8 @@ function usePayPalSdk() {
       return;
     }
     const script = document.createElement("script");
-    // currency=USD para cobrar em dólar
-    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=USD`;
+    // currency=BRL para cobrar em dólar
+    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=BRL`;
     script.async = true;
     script.onload = () => setLoaded(true);
     script.onerror = () => setLoaded(false);

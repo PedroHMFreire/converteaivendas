@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
       PAYPAL_PRICE_MENSAL_BRL,
       PAYPAL_PRICE_TRIMESTRAL_BRL,
       PAYPAL_PRICE_ANUAL_BRL,
-      // Retrocompatibilidade: se você ainda tiver setado *_USD nas envs, também aceitamos
+      // Retrocompatibilidade: se você ainda tiver setado *_BRL nas envs, também aceitamos
       PAYPAL_PRICE_MENSAL_USD,
       PAYPAL_PRICE_TRIMESTRAL_USD,
       PAYPAL_PRICE_ANUAL_USD,
@@ -42,7 +42,7 @@ export default async function handler(req: any, res: any) {
     const currency = (PAYPAL_CURRENCY || "BRL").toUpperCase();
 
     // ----- Descobrir o valor do plano (em BRL) -----
-    // Preferimos *_BRL; se não tiver, caímos em *_USD por retrocompatibilidade (o NOME da env não importa, a ordem é criada na moeda `currency`).
+    // Preferimos *_BRL; se não tiver, caímos em *_BRL por retrocompatibilidade (o NOME da env não importa, a ordem é criada na moeda `currency`).
     function pickPrice(p?: string | number, fallback?: string | number) {
       const raw = p ?? fallback;
       if (raw == null) return undefined;
@@ -51,11 +51,11 @@ export default async function handler(req: any, res: any) {
     }
 
     const cfgMensal =
-      pickPrice(PAYPAL_PRICE_MENSAL_BRL, PAYPAL_PRICE_MENSAL_USD) ?? undefined;
+      pickPrice(PAYPAL_PRICE_MENSAL_BRL, PAYPAL_PRICE_MENSAL_BRL) ?? undefined;
     const cfgTri =
-      pickPrice(PAYPAL_PRICE_TRIMESTRAL_BRL, PAYPAL_PRICE_TRIMESTRAL_USD) ?? undefined;
+      pickPrice(PAYPAL_PRICE_TRIMESTRAL_BRL, PAYPAL_PRICE_TRIMESTRAL_BRL) ?? undefined;
     const cfgAnual =
-      pickPrice(PAYPAL_PRICE_ANUAL_BRL, PAYPAL_PRICE_ANUAL_USD) ?? undefined;
+      pickPrice(PAYPAL_PRICE_ANUAL_BRL, PAYPAL_PRICE_ANUAL_BRL) ?? undefined;
 
     let value: number | undefined =
       typeof amountBRL === "number" && Number.isFinite(amountBRL) ? amountBRL : undefined;
@@ -69,7 +69,7 @@ export default async function handler(req: any, res: any) {
     if (value == null) {
       return res.status(400).json({
         error:
-          "Defina o preço do plano: configure PAYPAL_PRICE_MENSAL_BRL/TRIMESTRAL_BRL/ANUAL_BRL (ou *_USD) no Vercel, ou envie amountBRL no body.",
+          "Defina o preço do plano: configure PAYPAL_PRICE_MENSAL_BRL/TRIMESTRAL_BRL/ANUAL_BRL (ou *_BRL) no Vercel, ou envie amountBRL no body.",
       });
     }
 
