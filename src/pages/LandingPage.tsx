@@ -100,31 +100,40 @@ const LandingPage = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
       <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 overflow-x-hidden">
+          <div className="flex justify-between items-center h-14 md:h-16 w-full">
             <button
               className="flex items-center space-x-2"
               onClick={() => navigate('/')}
             >
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-white" />
+              <div className="w-7 h-7 md:w-8 md:h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <BarChart3 className="w-4 h-4 md:w-5 md:h-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-gray-900">Converte.AI</span>
+              <span className="text-lg md:text-xl font-bold text-gray-900">Converte.AI</span>
             </button>
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="outline"
-                onClick={() => navigate('/login')}
-                className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
+            <div className="flex items-center space-x-2 md:space-x-4">
+              <div className="md:flex hidden">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate('/login')}
+                  className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
+                >
+                  Entrar
+                </Button>
+                <Button
+                  onClick={() => navigate('/register')}
+                  className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
+                >
+                  Teste Grátis
+                </Button>
+              </div>
+              <button
+                className="md:hidden flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200"
+                aria-label="Abrir menu"
+                style={{ minWidth: 0, padding: 0 }}
               >
-                Entrar
-              </Button>
-              <Button
-                onClick={() => navigate('/register')}
-                className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
-              >
-                Teste Grátis
-              </Button>
+                <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-gray-700"><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="5" x2="17" y2="5"/><line x1="3" y1="15" x2="17" y2="15"/></svg>
+              </button>
             </div>
           </div>
         </div>
