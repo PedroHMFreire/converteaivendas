@@ -112,10 +112,19 @@ const LandingPage = () => {
               <span className="text-xl font-bold text-gray-900">Converte.AI</span>
             </button>
             <div className="flex items-center space-x-4">
-              <Button variant="outline" onClick={() => navigate('/login')}>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/login')}
+                className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
+              >
                 Entrar
               </Button>
-              <Button onClick={() => navigate('/register')}>Teste Grátis</Button>
+              <Button
+                onClick={() => navigate('/register')}
+                className="px-4 py-2 text-sm md:px-6 md:py-2 md:text-base"
+              >
+                Teste Grátis
+              </Button>
             </div>
           </div>
         </div>
