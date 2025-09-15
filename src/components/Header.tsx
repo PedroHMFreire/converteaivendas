@@ -166,38 +166,12 @@ const Header = () => {
               );
             })}
 
-            {/* 🔔 Pill sutil de trial (desktop) */}
-            {showTrialPill && (
-              <div className="ml-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                <Clock className="w-3.5 h-3.5" />
-                <span>{daysLeft} dia{daysLeft === 1 ? '' : 's'} restantes</span>
-                <button
-                  onClick={() => navigate('/upgrade')}
-                  className="underline underline-offset-2 hover:opacity-90"
-                >
-                  assine aqui
-                </button>
-              </div>
-            )}
           </nav>
 
           {/* User Menu + Tema */}
           <div className="flex items-center space-x-2">
             <ThemeToggleButton />
 
-            {/* Pill de trial em telas pequenas (fica perto do menu) */}
-            {showTrialPill && (
-              <button
-                onClick={() => navigate('/upgrade')}
-                className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs"
-                aria-label="Assinar agora"
-              >
-                <Clock className="w-3.5 h-3.5" />
-                <span>{daysLeft}d</span>
-                <span className="font-medium">assine</span>
-                <Crown className="w-3.5 h-3.5" />
-              </button>
-            )}
 
             {user && (
               <DropdownMenu>
