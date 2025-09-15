@@ -60,7 +60,7 @@ export default async function handler(req: any, res: any) {
         intent: "CAPTURE",
         purchase_units: [
           {
-            amount: { currency_code: "USD", value: value.toFixed(2) },
+            amount: { "currency_code": "BRL", "value": "49.90" },
             custom_id: `${userId}|${plan}`,
           },
         ],
