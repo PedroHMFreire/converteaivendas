@@ -40,7 +40,7 @@ function usePayPalSdk() {
     }
     const script = document.createElement("script");
     // currency=BRL para cobrar em dólar
-    script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=BRL`;
+  script.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=BRL&components=buttons,funding-eligibility&enable-funding=card`;
     script.async = true;
     script.onload = () => setLoaded(true);
     script.onerror = () => setLoaded(false);
