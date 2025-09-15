@@ -75,7 +75,18 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             plan,
             planSource: typeof getPlan === "function" ? "getCurrentPlan()" : "fallback",
             pathname: loc.pathname,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            // Análise detalhada da decisão
+            analysis: {
+              isTrial: plan === "trial",
+              isBasic: plan === "basic",
+              hasValidDays: typeof daysLeft === "number",
+              daysLeftValue: daysLeft,
+              shouldRedirect: plan === "trial" && typeof daysLeft === "number" && daysLeft <= 0,
+              condition1: plan === "trial",
+              condition2: typeof daysLeft === "number",
+              condition3: daysLeft <= 0
+            }
           });
 
           if (plan === "trial" && typeof daysLeft === "number" && daysLeft <= 0) {
@@ -173,7 +184,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       plan,
       planSource: typeof getPlan === "function" ? "getCurrentPlan()" : "fallback",
       shouldRedirect: plan === "trial" && typeof daysLeft === "number" && daysLeft <= 0,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      // Análise detalhada
+      analysis: {
+        isTrial: plan === "trial",
+        isBasic: plan === "basic",
+        hasValidDays: typeof daysLeft === "number",
+        daysLeftValue: daysLeft,
+        condition1: plan === "trial",
+        condition2: typeof daysLeft === "number",
+        condition3: daysLeft <= 0
+      }
     });
   } catch (error) {
     console.error("❌ AuthGuard Debug Error:", error);

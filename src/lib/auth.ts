@@ -148,6 +148,7 @@ async function getCurrentPlan(): Promise<AppPlan> {
     userId: uData.user.id,
     plan,
     rawData: data,
+    planoValue: data?.plano,
     timestamp: new Date().toISOString()
   });
 
@@ -178,6 +179,7 @@ async function getTrialDaysLeft(): Promise<number> {
     userId: uData.user.id,
     days,
     rawData: data,
+    dataType: typeof data,
     timestamp: new Date().toISOString()
   });
 
