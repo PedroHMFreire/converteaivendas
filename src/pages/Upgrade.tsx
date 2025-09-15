@@ -27,7 +27,7 @@ function loadPaypalSdk(clientId: string) {
   return new Promise<void>((resolve, reject) => {
     if ((window as any).paypal) return resolve();
     const s = document.createElement("script");
-    s.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=BRL&components=buttons,card-fields&enable-funding=card&intent=CAPTURE&commit=true`;
+    s.src = `https://www.paypal.com/sdk/js?client-id=${clientId}&currency=BRL&components=buttons&intent=CAPTURE&commit=true`;
     s.async = true;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error("Falha ao carregar PayPal SDK"));
