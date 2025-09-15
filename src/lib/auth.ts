@@ -84,13 +84,13 @@ async function getCurrentUser(): Promise<AppUser | null> {
   // 🔥 FORÇAR refresh do cache do Supabase para garantir dados atualizados
   // Primeiro, fazer uma consulta dummy para invalidar cache
   try {
-    await supabase.from('profiles').select('user_id').eq('user_id', uid).limit(1);
+    await supabase.from('v_profiles_access').select('user_id').eq('user_id', uid).limit(1);
   } catch (e) {
     console.warn("⚠️ Erro ao invalidar cache:", e);
   }
 
   const { data: pData, error: profileError } = await supabase
-    .from('profiles')
+    .from('v_profiles_access')
     .select('user_id, email, plano, ativo, data_expiracao')
     .eq('user_id', uid)
     .single();
@@ -133,7 +133,7 @@ async function getCurrentPlan(): Promise<AppPlan> {
   console.log("🔍 getCurrentPlan: Buscando plano para user", uData.user.id);
 
   const { data, error } = await supabase
-    .from('profiles')
+    .from('v_profiles_access')
     .select('plano')
     .eq('user_id', uData.user.id)
     .single();
