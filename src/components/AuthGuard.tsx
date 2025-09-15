@@ -59,20 +59,52 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
         // 2) Trial (sem travar a navegação em caso de erro)
         try {
+          console.log("🔍 AuthGuard: Iniciando verificação de plano", {
+            pathname: loc.pathname,
+            timestamp: new Date().toISOString()
+          });
+
           const daysLeft = await authService.getTrialDaysLeft();
           const getPlan = (authService as any).getCurrentPlan;
           const plan: string = typeof getPlan === "function"
             ? await getPlan()
             : (typeof daysLeft === "number" && daysLeft > 0 ? "trial" : "unknown");
 
+          console.log("📊 AuthGuard: Dados recebidos do authService", {
+            daysLeft,
+            plan,
+            planSource: typeof getPlan === "function" ? "getCurrentPlan()" : "fallback",
+            pathname: loc.pathname,
+            timestamp: new Date().toISOString()
+          });
+
           if (plan === "trial" && typeof daysLeft === "number" && daysLeft <= 0) {
+            console.log("🚫 AuthGuard: Redirecionando para upgrade", {
+              reason: "trial expirado",
+              plan,
+              daysLeft,
+              pathname: loc.pathname,
+              timestamp: new Date().toISOString()
+            });
             if (!cancelled) {
               setReady(true);
               navigate("/upgrade");
             }
             return;
           }
-        } catch {
+
+          console.log("✅ AuthGuard: Acesso permitido", {
+            plan,
+            daysLeft,
+            pathname: loc.pathname,
+            timestamp: new Date().toISOString()
+          });
+        } catch (error) {
+          console.error("❌ AuthGuard: Erro na verificação de plano", {
+            error: error.message,
+            pathname: loc.pathname,
+            timestamp: new Date().toISOString()
+          });
           // ignora falha do cálculo de trial
         }
       } finally {
@@ -87,8 +119,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Escutar mudanças no status do usuário
   useEffect(() => {
-    const handleStatusChange = () => {
-      console.log("🔄 AuthGuard: Status do usuário mudou, re-verificando...");
+    const handleStatusChange = (updatedUser?: any) => {
+      console.log("🔄 AuthGuard: Evento de mudança de status recebido", {
+        eventType: updatedUser ? "com dados" : "sem dados",
+        updatedUser: updatedUser ? {
+          id: updatedUser.id,
+          plano: updatedUser.plano,
+          dataExpiracao: updatedUser.dataExpiracao
+        } : null,
+        pathname: loc.pathname,
+        timestamp: new Date().toISOString()
+      });
       // Forçar re-execução da verificação
       setReady(false);
     };
@@ -96,12 +137,45 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     userEvents.on(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
     userEvents.on(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
 
+    console.log("🎧 AuthGuard: Listeners de eventos registrados", {
+      pathname: loc.pathname,
+      timestamp: new Date().toISOString()
+    });
+
     return () => {
       userEvents.off(USER_EVENTS.STATUS_CHANGED, handleStatusChange);
       userEvents.off(USER_EVENTS.PROFILE_UPDATED, handleStatusChange);
+      console.log("🔇 AuthGuard: Listeners de eventos removidos", {
+        pathname: loc.pathname,
+        timestamp: new Date().toISOString()
+      });
     };
-  }, []);
+  }, [loc.pathname]);
 
   if (!ready) return null;
   return <>{children}</>;
 }
+
+// Função global de debug para AuthGuard
+(window as any).debugAuthGuard = async () => {
+  console.log("🔧 Debug Global AuthGuard");
+  console.log("Para usar: debugAuthGuard()");
+
+  try {
+    const daysLeft = await authService.getTrialDaysLeft();
+    const getPlan = (authService as any).getCurrentPlan;
+    const plan: string = typeof getPlan === "function"
+      ? await getPlan()
+      : (typeof daysLeft === "number" && daysLeft > 0 ? "trial" : "unknown");
+
+    console.log("📊 AuthGuard Debug Info:", {
+      daysLeft,
+      plan,
+      planSource: typeof getPlan === "function" ? "getCurrentPlan()" : "fallback",
+      shouldRedirect: plan === "trial" && typeof daysLeft === "number" && daysLeft <= 0,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ AuthGuard Debug Error:", error);
+  }
+};
