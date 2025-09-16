@@ -176,9 +176,12 @@ function generate8Insights(userId: string, vendas: any[], lojas: any[], vendedor
   if (lojasSemTicket.length > 0) {
     out.push({ kind: 'tickets', title: 'Ticket médio pendente', description: `Defina ticket médio para: ${lojasSemTicket.slice(0,3).join(', ')}${lojasSemTicket.length>3?'…':''}.`, tag: 'alert', icon: 'dollar' })
   } else {
-    // Projection +1pp (global)
-    const proj = sum(Object.values(byLoja).map((agg: any) => (agg.atend * 0.01) * safe(0))) // safe(0) placeholder; better per-loja
-    out.push({ kind: 'plus1pp', title: 'Meta rápida: +1pp de conversão', description: `Ganho estimado com +1pp: rever por loja.`, tag: 'opportunity', icon: 'target' })
+    // Projection +1pp (global) usando ticketMedio por loja
+    const proj = Object.entries(byLoja).reduce((acc, [lojaId, agg]: any) => {
+      const t = safe(lojasMap[lojaId]?.ticketMedio ?? 0)
+      return acc + (agg.atend * 0.01 * t)
+    }, 0)
+    out.push({ kind: 'plus1pp', title: 'Meta rápida: +1pp de conversão', description: `Ganho estimado com +1pp de conversão: ${proj.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})}.`, tag: 'opportunity', icon: 'target', metric: `Estimativa global` })
   }
 
   // Add two more general insights if needed to reach 8
@@ -189,6 +192,24 @@ function generate8Insights(userId: string, vendas: any[], lojas: any[], vendedor
   if (Object.keys(byLoja).length > 0) {
     const lowConvLoja = Object.entries(byLoja).sort((a,b)=>((a[1].vendas/(a[1].atend||1)) - (b[1].vendas/(b[1].atend||1))))[0]
     if (lowConvLoja) out.push({ kind: 'low_store_conv', title: 'Loja com baixa conversão', description: 'Foque em abordagem e qualificação de leads nesta loja.', tag: 'opportunity', icon: 'store' })
+  }
+
+  // Completar até 8 insights com dicas genéricas, se necessário
+  const existingKinds = new Set(out.map(i => i.kind))
+  const tips = [
+    { kind: 'tip_attendance', title: 'Dica: foco em atendimento', description: 'Gere rapport rápido e entenda a dor do cliente nos primeiros 60s.', tag: 'info', icon: 'users' },
+    { kind: 'tip_qualification', title: 'Dica: qualificação', description: 'Faça 3 perguntas-chave antes de ofertar para elevar a taxa de acerto.', tag: 'info', icon: 'target' },
+    { kind: 'tip_upsell', title: 'Dica: upsell inteligente', description: 'Ofereça combo/upgrade quando a intenção de compra já está clara.', tag: 'opportunity', icon: 'dollar' },
+    { kind: 'tip_followup', title: 'Dica: follow-up', description: 'Recontate indecisos em 24–48h; recupere vendas perdidas sem custo.', tag: 'opportunity', icon: 'calendar' },
+    { kind: 'tip_scripts', title: 'Dica: script de objeções', description: 'Mapeie 5 objeções comuns e treine respostas objetivas com a equipe.', tag: 'info', icon: 'alert' },
+    { kind: 'tip_checklist', title: 'Dica: checklist de abertura', description: 'Tenha um checklist para garantir padrão de atendimento desde a recepção.', tag: 'info', icon: 'store' },
+    { kind: 'tip_microgoals', title: 'Dica: micro-metas diárias', description: 'Defina metas de conversão por faixa horária para manter o ritmo.', tag: 'opportunity', icon: 'target' },
+    { kind: 'tip_best_practices', title: 'Dica: melhores práticas', description: 'Analise quem performa melhor e replique as práticas nas demais lojas.', tag: 'info', icon: 'trendingUp' },
+  ]
+  for (const tip of tips) {
+    if (out.length >= 8) break
+    if (existingKinds.has(tip.kind)) continue
+    out.push(tip)
   }
 
   return out.slice(0, 8)
