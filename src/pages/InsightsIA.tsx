@@ -8,6 +8,7 @@ import {
   CalendarClock, DollarSign, Users, Store
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 
 type Venda = {
   id: string;
@@ -60,6 +61,7 @@ const inRange = (s: string, a: Date, b: Date) => {
 };
 
 export default function InsightsIA() {
+  const navigate = useNavigate();
   const [userId, setUserId] = useState<string>("");
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [lojas, setLojas] = useState<Loja[]>([]);
@@ -67,74 +69,97 @@ export default function InsightsIA() {
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [today, setToday] = useState<string>(dateOnly(new Date().toISOString()));
+  const [regenLoading, setRegenLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth?.user?.id) {
-        toast({ title: "Faça login para ver os insights", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
-      const uid = auth.user.id;
-      setUserId(uid);
+      try {
+        const { data: auth } = await supabase.auth.getUser();
+        if (!auth?.user?.id) {
+          toast({ title: "Faça login para ver os insights", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const uid = auth.user.id;
+        setUserId(uid);
 
-      // 1) Busca cadastros (lojas com ticketMedio + vendedores)
-      const { data: cad } = await supabase
-        .from("cadastros")
-        .select("lojas, vendedores")
-        .eq("user_id", uid)
-        .limit(1)
-        .single();
+        // 1) Cadastros (lojas com ticketMedio + vendedores)
+        const { data: cad, error: cadErr } = await supabase
+          .from("cadastros")
+          .select("lojas, vendedores")
+          .eq("user_id", uid)
+          .limit(1)
+          .single();
+        if (cadErr) throw cadErr;
 
-      const lojasDb = ((cad?.lojas ?? []) as Loja[]) || [];
-      const vendedoresDb = ((cad?.vendedores ?? []) as Vendedor[]) || [];
-      setLojas(lojasDb);
-      setVendedores(vendedoresDb);
+        const lojasDb = ((cad?.lojas ?? []) as Loja[]) || [];
+        const vendedoresDb = ((cad?.vendedores ?? []) as Vendedor[]) || [];
+        setLojas(lojasDb);
+        setVendedores(vendedoresDb);
 
-      // 2) Busca registros (últimos 60 dias, por garantia)
-      const since = addDays(new Date(), -60);
-      const { data: regs } = await supabase
-        .from("registros")
-        .select("*")
-        .eq("user_id", uid);
+        // 2) Registros dos últimos 60 dias, projetando apenas colunas necessárias
+        const sinceStr = dateOnly(addDays(new Date(), -60).toISOString());
+        const { data: regs, error: regsErr } = await supabase
+          .from("registros")
+          .select("id, vendedorId, lojaId, data, user_id, vendas, atendimentos")
+          .eq("user_id", uid)
+          .gte("data", sinceStr)
+          .lte("data", today);
+        if (regsErr) throw regsErr;
 
-      const vendasData = (regs || []).map((r: any) => ({ ...r, data: dateOnly(r.data) })) as Venda[];
-      setVendas(vendasData);
+        const vendasData = (regs || []).map((r: any) => ({ ...r, data: dateOnly(r.data) })) as Venda[];
+        setVendas(vendasData);
 
-      // 3) Tenta carregar insights do dia (cache)
-      const { data: insRow } = await supabase
-        .from("insights")
-        .select("items")
-        .eq("user_id", uid)
-        .eq("date", today)
-        .limit(1)
-        .single();
-
-      if (insRow?.items) {
-        setInsights(insRow.items as Insight[]);
-      } else {
-        // computa e salva
-        const fresh = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
-        setInsights(fresh);
-        await supabase
+        // 3) Tenta carregar insights do dia (cache)
+        const { data: insRow, error: insErr } = await supabase
           .from("insights")
-          .upsert([{ user_id: uid, date: today, items: fresh, updated_at: new Date().toISOString() }], { onConflict: "user_id,date" });
-      }
+          .select("items")
+          .eq("user_id", uid)
+          .eq("date", today)
+          .limit(1)
+          .single();
+        if (insErr && insErr.code !== 'PGRST116') throw insErr; // ignora not found
 
-      setLoading(false);
+        if (insRow?.items) {
+          setInsights(insRow.items as Insight[]);
+        } else {
+          // computa e salva
+          const fresh = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
+          setInsights(fresh);
+          await supabase
+            .from("insights")
+            .upsert(
+              [{ user_id: uid, date: today, items: fresh, updated_at: new Date().toISOString() }],
+              { onConflict: "user_id,date" }
+            );
+        }
+      } catch (e: any) {
+        console.error("InsightsIA: erro ao carregar dados", e);
+        toast({ title: "Erro ao carregar insights", description: e?.message || String(e), variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [today]);
 
   const regenerate = async () => {
-    if (!userId) return;
-    const fresh = generateDailyInsights(vendas, lojas, vendedores);
-    setInsights(fresh);
-    await supabase
-      .from("insights")
-      .upsert([{ user_id: userId, date: today, items: fresh, updated_at: new Date().toISOString() }], { onConflict: "user_id,date" });
-    toast({ title: "Insights do dia atualizados!" });
+    if (!userId || regenLoading) return;
+    setRegenLoading(true);
+    try {
+      const fresh = generateDailyInsights(vendas, lojas, vendedores);
+      setInsights(fresh);
+      const { error } = await supabase
+        .from("insights")
+        .upsert([{ user_id: userId, date: today, items: fresh, updated_at: new Date().toISOString() }], { onConflict: "user_id,date" });
+      if (error) throw error;
+      toast({ title: "Insights do dia atualizados!" });
+    } catch (e: any) {
+      console.error("InsightsIA: erro ao regerar", e);
+      toast({ title: "Erro ao regerar insights", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setRegenLoading(false);
+    }
   };
 
   return (
@@ -150,8 +175,8 @@ export default function InsightsIA() {
             value={today}
             onChange={(e) => setToday(e.target.value)}
           />
-          <Button variant="outline" onClick={regenerate} title="Regerar os 5 insights do dia">
-            <RefreshCw className="w-4 h-4 mr-2" /> Regerar
+          <Button variant="outline" onClick={regenerate} title="Regerar os 5 insights do dia" disabled={regenLoading}>
+            <RefreshCw className="w-4 h-4 mr-2" /> {regenLoading ? 'Regerando...' : 'Regerar'}
           </Button>
         </div>
       </div>
@@ -192,7 +217,17 @@ export default function InsightsIA() {
               {it.metric && <p className="mt-2 text-xs text-gray-500">Métrica: {it.metric}</p>}
               {it.action && (
                 <div className="mt-3">
-                  <Button size="sm" variant="outline">{it.action}</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (it.id === 'tickets' || (it.action || '').toLowerCase().includes('cadastros')) {
+                        navigate('/cadastros');
+                      }
+                    }}
+                  >
+                    {it.action}
+                  </Button>
                 </div>
               )}
             </li>

@@ -8,9 +8,9 @@ const trialBannerElement = document.querySelector('[class*="bg-amber-50"]');
 console.log("1. TrialBanner visível:", !!trialBannerElement);
 
 // 2. Verificar função de debug global
-if (typeof (window as any).debugTrialBanner === 'function') {
+if (typeof window.debugTrialBanner === 'function') {
   console.log("2. ✅ Função debugTrialBanner disponível");
-  (window as any).debugTrialBanner();
+  window.debugTrialBanner();
 } else {
   console.log("2. ❌ Função debugTrialBanner não encontrada");
 }
