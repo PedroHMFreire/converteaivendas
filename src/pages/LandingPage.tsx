@@ -195,7 +195,7 @@ const LandingPage = () => {
               return (
                 <Card
                   key={idx}
-                  className="text-center hover:shadow-lg transition-shadow"
+                  className="text-center hover:shadow-lg transition-shadow bg-white dark:bg-white text-gray-900 dark:text-gray-900"
                 >
                   <CardHeader>
                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
@@ -226,7 +226,7 @@ const LandingPage = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="text-center">
+            <Card className="text-center bg-white dark:bg-white text-gray-900 dark:text-gray-900">
               <CardHeader>
                 <div className="text-2xl font-bold text-blue-600">1</div>
                 <CardTitle>Crie sua conta</CardTitle>
@@ -238,7 +238,7 @@ const LandingPage = () => {
               </CardContent>
             </Card>
 
-            <Card className="text-center">
+            <Card className="text-center bg-white dark:bg-white text-gray-900 dark:text-gray-900">
               <CardHeader>
                 <div className="text-2xl font-bold text-blue-600">2</div>
                 <CardTitle>Registre as vendas</CardTitle>
@@ -250,7 +250,7 @@ const LandingPage = () => {
               </CardContent>
             </Card>
 
-            <Card className="text-center">
+            <Card className="text-center bg-white dark:bg-white text-gray-900 dark:text-gray-900">
               <CardHeader>
                 <div className="text-2xl font-bold text-blue-600">3</div>
                 <CardTitle>Receba insights</CardTitle>
@@ -326,7 +326,7 @@ const LandingPage = () => {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {pricing.map((p) => (
-              <Card key={p.label} className="hover:shadow-lg transition-shadow">
+              <Card key={p.label} className="hover:shadow-lg transition-shadow bg-white dark:bg-white text-gray-900 dark:text-gray-900">
                 <CardHeader>
                   <CardTitle className="text-xl">{p.label}</CardTitle>
                 </CardHeader>
