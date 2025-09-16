@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -63,7 +64,11 @@ setTimeout(() => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-blue-100 flex items-center justify-center p-4">
+    <>
+      <Helmet>
+        <meta name="robots" content="noindex,nofollow" />
+      </Helmet>
+      <div className="min-h-screen bg-gradient-to-br from-white to-blue-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo e Marca */}
         <div className="text-center mb-8">
@@ -182,7 +187,8 @@ setTimeout(() => {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 };
 

@@ -30,12 +30,30 @@ function salvarVendasLocais(userId: string, vendas: Venda[]) { localStorage.setI
 function carregarVendasLocais(userId: string): Venda[] {
   const raw = localStorage.getItem(getLocalKey(userId));
   if (!raw) return [];
-  try { return JSON.parse(raw) as Venda[]; } catch { return []; }
+  try {
+    const parsed = JSON.parse(raw) as Venda[];
+    // normalize numeric fields in case they were saved as strings
+    return parsed.map((r) => ({
+      ...r,
+      data: dateOnly((r as any).data as any),
+      atendimentos: toNum((r as any).atendimentos),
+      vendas: toNum((r as any).vendas),
+      valor: (r as any).valor !== undefined ? toNum((r as any).valor) : undefined,
+    }));
+  } catch {
+    return [];
+  }
 }
 function salvarPremioSemana(userId: string, premio: string) { localStorage.setItem(getPremioKey(userId), premio); }
 function carregarPremioSemana(userId: string): string { return localStorage.getItem(getPremioKey(userId)) || ""; }
 const dateOnly = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date(new Date(d)).toISOString().split("T")[0];
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+
+// Coerce any value to a safe non-negative finite number (NaN -> 0)
+function toNum(v: any): number {
+  const n = typeof v === "number" ? v : (typeof v === "string" && v.trim() !== "" ? Number(v) : 0);
+  return Number.isFinite(n) ? n : 0;
+}
 
 async function sincronizarComBanco(userId: string, vendas: Venda[]) {
   try {
@@ -114,7 +132,9 @@ function calcularPerdas(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) 
   const ticketSalvoMap: Record<string, number> = {};
   const lojasSemTicket: string[] = [];
   for (const l of lojas) {
-    const t = (typeof l.ticketMedio === "number" && !Number.isNaN(l.ticketMedio) && l.ticketMedio > 0) ? l.ticketMedio : 0;
+  const tRaw: any = (l as any).ticketMedio;
+  const tVal = toNum(tRaw);
+  const t = tVal > 0 ? tVal : 0;
     ticketSalvoMap[l.id] = t;
     if (t === 0) lojasSemTicket.push(l.nome);
   }
@@ -126,7 +146,7 @@ function calcularPerdas(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) 
   const valorPerdidoPorLojaMap: Record<string, number> = {};
 
   for (const v of vendas) {
-    const perdidos = Math.max((v.atendimentos || 0) - (v.vendas || 0), 0);
+    const perdidos = Math.max(toNum((v as any).atendimentos) - toNum((v as any).vendas), 0);
     const ticket = ticketSalvoMap[v.lojaId] || 0; // ← SOMENTE o salvo entra aqui
     const valorPerdido = perdidos * ticket;
 
@@ -186,7 +206,15 @@ export default function RegistroVendas() {
       let vendasLocais: Venda[] = [];
       try {
         const { data: regs } = await supabase.from("registros").select("*").eq("user_id", uid);
-        if (Array.isArray(regs) && regs.length) vendasLocais = regs.map((r: any) => ({ ...r, data: dateOnly(r.data) }));
+        if (Array.isArray(regs) && regs.length) {
+          vendasLocais = regs.map((r: any) => ({
+            ...r,
+            data: dateOnly(r.data),
+            atendimentos: toNum(r.atendimentos),
+            vendas: toNum(r.vendas),
+            valor: r.valor !== undefined ? toNum(r.valor) : undefined,
+          }));
+        }
       } catch (e) { console.warn("Falha ao consultar 'registros':", e); }
 
       // fallback backup
@@ -195,7 +223,16 @@ export default function RegistroVendas() {
           const { data } = await supabase
             .from("vendas_backup").select("vendas")
             .eq("user_id", uid).order("updated_at", { ascending: false }).limit(1).single();
-          if (data?.vendas) { vendasLocais = data.vendas; salvarVendasLocais(uid, vendasLocais); }
+          if (data?.vendas) {
+            vendasLocais = (data.vendas as Venda[]).map((r: any) => ({
+              ...r,
+              data: dateOnly(r.data),
+              atendimentos: toNum(r.atendimentos),
+              vendas: toNum(r.vendas),
+              valor: r.valor !== undefined ? toNum(r.valor) : undefined,
+            }));
+            salvarVendasLocais(uid, vendasLocais);
+          }
         } catch (e) { /* noop */ }
       }
       if (!vendasLocais.length) vendasLocais = carregarVendasLocais(uid);
@@ -205,10 +242,23 @@ export default function RegistroVendas() {
       try {
         const { data: cad } = await supabase.from("cadastros").select("lojas, vendedores").eq("user_id", uid).limit(1).single();
         if (cad) {
-          setLojas((cad.lojas || []) as Loja[]);
-          setVendedores((cad.vendedores || []) as Vendedor[]);
-          localStorage.setItem(`converte:lojas:${uid}`, JSON.stringify(cad.lojas || []));
-          localStorage.setItem(`converte:vendedores:${uid}`, JSON.stringify(cad.vendedores || []));
+          // Normalize lojas: coerce ticketMedio/metaTicket to numbers
+          const lojasNorm: Loja[] = ((cad.lojas || []) as any[]).map((l: any) => ({
+            id: String(l.id),
+            nome: String(l.nome),
+            ticketMedio: (() => {
+              const n = toNum(l.ticketMedio);
+              return Number.isFinite(n) && n >= 0 ? n : undefined;
+            })(),
+            metaTicket: (() => {
+              const n = toNum(l.metaTicket);
+              return Number.isFinite(n) && n >= 0 ? n : undefined;
+            })(),
+          }));
+          setLojas(lojasNorm);
+          setVendedores(((cad.vendedores || []) as any[]).map((v: any) => ({ id: String(v.id), nome: String(v.nome), lojaId: String(v.lojaId || "") })));
+          localStorage.setItem(`converte:lojas:${uid}`, JSON.stringify(lojasNorm));
+          localStorage.setItem(`converte:vendedores:${uid}`, JSON.stringify((cad.vendedores || [])));
         }
       } catch (e) { console.warn("Falha ao consultar 'cadastros':", e); }
 
@@ -490,7 +540,7 @@ export default function RegistroVendas() {
         <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><BarChart3 className="w-5 h-5" /> Perdidos</div>
           <div className="text-xl font-bold mt-1">
-            {vendasFiltradas.reduce((acc, v) => acc + Math.max((v.atendimentos||0)-(v.vendas||0), 0), 0)}
+              {vendasFiltradas.reduce((acc, v) => acc + Math.max(toNum((v as any).atendimentos) - toNum((v as any).vendas), 0), 0)}
           </div>
         </div>
         <div className="rounded-xl shadow p-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800">

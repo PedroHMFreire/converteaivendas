@@ -202,7 +202,7 @@ export default function InsightsIA() {
     });
     const missing = Math.max(0, 8 - feed.length);
     const fbBase = fallbackInsights.slice(0, missing).map(mapFallback);
-    let items = feed.length > 0 ? [...feed, ...fbBase] : fallbackInsights.slice(0, 8).map(mapFallback);
+    const items = feed.length > 0 ? [...feed, ...fbBase] : fallbackInsights.slice(0, 8).map(mapFallback);
 
     // Se ainda estiver com menos de 8, completa com dicas genéricas
     const tips: Insight[] = [

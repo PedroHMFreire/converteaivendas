@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { supabase } from '@/lib/supabaseClient';
 
 const LandingPage = () => {
@@ -79,6 +80,12 @@ const LandingPage = () => {
     'Tenha previsibilidade na operação',
   ];
 
+  const title = 'Converta + com IA | Converta AI Vendas';
+  const description = 'Aumente a conversão e recupere vendas com insights diários de IA, dashboards e gestão de vendedores. Ferramenta completa para operações comerciais.';
+  const canonical = 'https://www.converteaivendas.com.br/';
+  const ogImage = 'https://www.converteaivendas.com.br/og-image.jpg';
+  const siteName = 'Converta AI Vendas';
+
   const testimonials = [
     {
       name: 'Carlos Silva',
@@ -111,7 +118,47 @@ const LandingPage = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <>
+      <Helmet>
+        <title>{title}</title>
+        <meta name="description" content={description} />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content={siteName} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:url" content={canonical} />
+        <meta property="og:image" content={ogImage} />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={description} />
+        <meta name="twitter:image" content={ogImage} />
+        <meta name="robots" content="index,follow" />
+        <script type="application/ld+json">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: siteName,
+            applicationCategory: 'BusinessApplication',
+            operatingSystem: 'Web',
+            url: canonical,
+            image: ogImage,
+            description,
+            offers: {
+              '@type': 'Offer',
+              priceCurrency: 'BRL',
+              price: '49.90',
+              availability: 'https://schema.org/InStock',
+            },
+            creator: {
+              '@type': 'Organization',
+              name: siteName,
+              url: canonical,
+            },
+          })}
+        </script>
+      </Helmet>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 overflow-x-hidden">
@@ -444,7 +491,8 @@ const LandingPage = () => {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   );
 };
 
