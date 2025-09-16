@@ -1,6 +1,9 @@
 -- insights_feed schema
 -- Run this in Supabase SQL Editor
 
+-- Ensure UUID generator
+create extension if not exists "pgcrypto";
+
 create table if not exists public.insights_feed (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -23,10 +26,17 @@ create unique index if not exists insights_feed_user_slot_kind_uniq on public.in
 -- RLS
 alter table public.insights_feed enable row level security;
 
--- Allow users to read their own feed
-create policy if not exists "read own feed" on public.insights_feed
-  for select using (auth.uid() = user_id);
+-- Allow users (authenticated) to read their own feed
+drop policy if exists "read own feed" on public.insights_feed;
+create policy "read own feed" on public.insights_feed
+  for select
+  to authenticated
+  using (auth.uid() = user_id);
 
--- Block direct writes from client (Edge Function will use service role)
-create policy if not exists "deny client writes" on public.insights_feed
-  for all to authenticated using (false) with check (false);
+-- Allow only service role to write (Edge Function)
+drop policy if exists "service role writes" on public.insights_feed;
+create policy "service role writes" on public.insights_feed
+  for all
+  to service_role
+  using (true)
+  with check (true);
