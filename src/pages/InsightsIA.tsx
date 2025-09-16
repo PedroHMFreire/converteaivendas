@@ -201,8 +201,27 @@ export default function InsightsIA() {
       action: it.action,
     });
     const missing = Math.max(0, 8 - feed.length);
-    const fb = fallbackInsights.slice(0, missing).map(mapFallback);
-    return feed.length > 0 ? [...feed, ...fb] : fallbackInsights.slice(0, 8).map(mapFallback);
+    const fbBase = fallbackInsights.slice(0, missing).map(mapFallback);
+    let items = feed.length > 0 ? [...feed, ...fbBase] : fallbackInsights.slice(0, 8).map(mapFallback);
+
+    // Se ainda estiver com menos de 8, completa com dicas genéricas
+    const tips: Insight[] = [
+      { id: 'tip_attendance', title: 'Dica: foco em atendimento', description: 'Gere rapport rápido e entenda a dor do cliente nos primeiros 60s.', tag: 'info', icon: 'users' },
+      { id: 'tip_qualification', title: 'Dica: qualificação', description: 'Faça 3 perguntas-chave antes de ofertar para elevar a taxa de acerto.', tag: 'info', icon: 'target' },
+      { id: 'tip_upsell', title: 'Dica: upsell inteligente', description: 'Ofereça combo/upgrade quando a intenção de compra já está clara.', tag: 'opportunity', icon: 'dollar' },
+      { id: 'tip_followup', title: 'Dica: follow-up', description: 'Recontate indecisos em 24–48h; recupere vendas perdidas sem custo.', tag: 'opportunity', icon: 'calendar' },
+      { id: 'tip_scripts', title: 'Dica: script de objeções', description: 'Mapeie 5 objeções comuns e treine respostas objetivas com a equipe.', tag: 'info', icon: 'alert' },
+      { id: 'tip_checklist', title: 'Dica: checklist de abertura', description: 'Tenha um checklist para garantir padrão de atendimento desde a recepção.', tag: 'info', icon: 'store' },
+      { id: 'tip_microgoals', title: 'Dica: micro-metas diárias', description: 'Defina metas de conversão por faixa horária para manter o ritmo.', tag: 'opportunity', icon: 'target' },
+      { id: 'tip_best_practices', title: 'Dica: melhores práticas', description: 'Analise quem performa melhor e replique as práticas nas demais lojas.', tag: 'info', icon: 'trendingUp' },
+    ];
+    const haveIds = new Set(items.map(i => i.id));
+    for (let i = 0; i < tips.length && items.length < 8; i++) {
+      const t = tips[i];
+      if (haveIds.has(t.id)) continue;
+      items.push(mapFallback(t, i));
+    }
+    return items.slice(0, 8);
   }, [feed, fallbackInsights]);
 
   return (

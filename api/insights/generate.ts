@@ -25,7 +25,7 @@ function dateOnly(d: string | Date) {
 }
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',
 }
 
 export default async function handler(req: Request) {
@@ -37,6 +37,10 @@ export default async function handler(req: Request) {
   const slot = daily8amSlot()
 
   try {
+    // Optional debug: /api/insights/generate?debug=1
+    const url = new URL(req.url)
+    const debug = url.searchParams.get('debug') === '1'
+
     // Get active users: who have cadastros row
     const { data: users, error: usersErr } = await supabase
       .from('cadastros')
@@ -44,6 +48,19 @@ export default async function handler(req: Request) {
     if (usersErr) throw usersErr
 
     const uniqUsers = Array.from(new Set((users || []).map(u => u.user_id))).filter(Boolean)
+
+    if (debug) {
+      return new Response(JSON.stringify({
+        ok: true,
+        message: 'Debug info',
+        env: {
+          hasUrl: !!SUPABASE_URL,
+          hasServiceKey: !!SUPABASE_SERVICE_ROLE_KEY,
+        },
+        usersFound: uniqUsers.length,
+        slot: slot.toISOString(),
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
 
     for (const uid of uniqUsers) {
   // Check idempotency (once per day per user)
