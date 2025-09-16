@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import {
@@ -133,14 +133,11 @@ export default function InsightsIA() {
         const vendasData = (regs || []).map((r: any) => ({ ...r, data: dateOnly(r.data) })) as Venda[];
         setVendas(vendasData);
 
-        // Primeira página do feed
+  // Primeira página do feed
         await loadPage(uid, 0);
-
-        // Se não houver feed, gera fallback básico (não persiste)
-        if (feed.length === 0) {
-          const basic = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
-          setFallbackInsights(basic);
-        }
+  // Prepara fallback básico (não persiste) — serve para complementar até 8
+  const basic = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
+  setFallbackInsights(basic);
       } catch (e: any) {
         console.error("InsightsIA: erro ao carregar feed", e);
         toast({ title: "Erro ao carregar insights", description: e?.message || String(e), variant: "destructive" });
@@ -189,7 +186,24 @@ export default function InsightsIA() {
     return () => obs.disconnect();
   }, [userId, page, hasMore, isLoadingPage]);
 
-  // sem botão de regerar no novo fluxo (feed gerado pelo backend a cada 2h)
+  // sem botão de regerar no novo fluxo (feed gerado pelo backend diariamente)
+
+  // Combina feed do banco com fallback local para garantir até 8 cards
+  const combinedItems: FeedItem[] = useMemo(() => {
+    const mapFallback = (it: Insight, idx: number): FeedItem => ({
+      id: `fb-${it.id}-${idx}`,
+      created_at: new Date().toISOString(),
+      title: it.title,
+      description: it.description,
+      tag: it.tag,
+      icon: it.icon as any,
+      metric: it.metric,
+      action: it.action,
+    });
+    const missing = Math.max(0, 8 - feed.length);
+    const fb = fallbackInsights.slice(0, missing).map(mapFallback);
+    return feed.length > 0 ? [...feed, ...fb] : fallbackInsights.slice(0, 8).map(mapFallback);
+  }, [feed, fallbackInsights]);
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 py-8">
@@ -203,11 +217,11 @@ export default function InsightsIA() {
         <div className="text-sm text-gray-500">Carregando feed…</div>
       )}
 
-      {!loading && feed.length === 0 && fallbackInsights.length > 0 && (
+  {!loading && feed.length === 0 && combinedItems.length > 0 && (
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-gray-600 mb-2">Sugestões do dia</h2>
           <ul className="grid grid-cols-1 gap-3">
-            {fallbackInsights.map((it) => (
+    {combinedItems.map((it) => (
               <li key={it.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
@@ -218,7 +232,7 @@ export default function InsightsIA() {
                         ? "bg-emerald-100 text-emerald-700"
                         : "bg-sky-100 text-sky-700"
                     }`}>
-                      {icons[it.icon]}
+          {it.icon && icons[it.icon]}
                     </span>
                     <h3 className="font-semibold">{it.title}</h3>
                   </div>
@@ -246,7 +260,7 @@ export default function InsightsIA() {
       )}
 
       <ul className="grid grid-cols-1 gap-3">
-        {feed.map((it) => (
+    {combinedItems.map((it) => (
           <li key={it.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
