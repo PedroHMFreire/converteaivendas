@@ -325,7 +325,6 @@ export default function RegistroVendas() {
       lojaId: "",
       atendimentos: 0,
       vendas: 0,
-      valor: 0,
       data: dateOnly(new Date().toISOString()),
       user_id: userId!,
     });
@@ -637,18 +636,28 @@ export default function RegistroVendas() {
     <label className="block text-xs font-bold mb-1">Vendas</label>
     <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Insira a quantidade de vendas" value={editingVenda.vendas === 0 ? "" : editingVenda.vendas} onChange={(e) => handleVendasChange(Number(e.target.value))} min={0} required />
 
-    <label className="block text-xs font-bold mb-1">Valor total (R$)</label>
-    <input className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" type="number" placeholder="Valor total (R$)" value={editingVenda.valor === 0 ? "" : editingVenda.valor ?? ""}
-      onChange={(e) => setEditingVenda({ ...editingVenda, valor: Number(e.target.value) })} min={0} />
-
-              <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.vendedorId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, vendedorId: e.target.value })} required>
+              <select
+                className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
+                value={editingVenda.vendedorId ?? ""}
+                onChange={(e) => {
+                  const vid = e.target.value;
+                  const vend = vendedores.find(v => v.id === vid);
+                  setEditingVenda({ ...editingVenda, vendedorId: vid, lojaId: vend?.lojaId ?? "" });
+                }}
+                required
+              >
                 <option value="">Selecione o vendedor</option>
                 {vendedores.map((v) => (<option key={v.id} value={v.id}>{v.nome}</option>))}
               </select>
-              <select className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white" value={editingVenda.lojaId ?? ""} onChange={(e) => setEditingVenda({ ...editingVenda, lojaId: e.target.value })} required>
-                <option value="">Selecione a loja</option>
-                {lojas.map((l) => (<option key={l.id} value={l.id}>{l.nome}</option>))}
-              </select>
+              <label className="block text-xs font-bold mb-1">Loja</label>
+              <input
+                className="border p-2 w-full mb-2 dark:bg-zinc-800 dark:text-white"
+                type="text"
+                value={getLojaNome(editingVenda.lojaId) || ""}
+                placeholder="Selecione um vendedor para preencher a loja"
+                readOnly
+                disabled
+              />
 
               {conversaoPreview !== null && (
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">Conversão prévia: {conversaoPreview.toFixed(1)}%</div>
