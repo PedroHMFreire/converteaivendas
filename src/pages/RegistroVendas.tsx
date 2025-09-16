@@ -126,28 +126,39 @@ function construirTicketEstimadoMap(vendas: Venda[]): Record<string, number> {
   return estimado;
 }
 
-/* ===== Raio-X (usa SOMENTE ticketMedio salvo) ===== */
+/* ===== Raio-X (usa ticket salvo; se ausente, cai para o estimado) ===== */
 function calcularPerdas(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) {
-  // mapa de tickets salvos (0 se ausente): usado nos cálculos
+  // 1) mapa de tickets salvos
   const ticketSalvoMap: Record<string, number> = {};
-  const lojasSemTicket: string[] = [];
   for (const l of lojas) {
-  const tRaw: any = (l as any).ticketMedio;
-  const tVal = toNum(tRaw);
-  const t = tVal > 0 ? tVal : 0;
+    const t = Math.max(0, toNum((l as any).ticketMedio));
     ticketSalvoMap[l.id] = t;
-    if (t === 0) lojasSemTicket.push(l.nome);
   }
-  // referência visual (não usada nos cálculos)
+
+  // 2) referência estimada (média valor/vendas por loja, a partir dos registros)
   const ticketEstimadoMap = construirTicketEstimadoMap(vendas);
 
+  // 3) lojas sem referência alguma (nem salvo nem estimado) — só para aviso
+  const lojasSemTicket: string[] = [];
+  for (const l of lojas) {
+    const salvo = ticketSalvoMap[l.id] || 0;
+    const estim = ticketEstimadoMap[l.id] || 0;
+    if (salvo <= 0 && estim <= 0) lojasSemTicket.push(l.nome);
+  }
+
+  // 4) cálculo
   let valorPerdidoTotal = 0;
   const perdidosPorVendedorMap: Record<string, number> = {};
   const valorPerdidoPorLojaMap: Record<string, number> = {};
 
   for (const v of vendas) {
     const perdidos = Math.max(toNum((v as any).atendimentos) - toNum((v as any).vendas), 0);
-    const ticket = ticketSalvoMap[v.lojaId] || 0; // ← SOMENTE o salvo entra aqui
+
+    // prioridade: ticket salvo > estimado > 0
+    const salvo = ticketSalvoMap[v.lojaId] || 0;
+    const estim = ticketEstimadoMap[v.lojaId] || 0;
+    const ticket = salvo > 0 ? salvo : estim;
+
     const valorPerdido = perdidos * ticket;
 
     perdidosPorVendedorMap[v.vendedorId] = (perdidosPorVendedorMap[v.vendedorId] || 0) + perdidos;
@@ -172,7 +183,7 @@ function calcularPerdas(vendas: Venda[], vendedores: Vendedor[], lojas: Loja[]) 
     perdidosPorVendedor,
     valorPerdidoPorLoja,
     ticketSalvoMap,
-    ticketEstimadoMap, // referência visual
+    ticketEstimadoMap,
     lojasSemTicket,
   };
 }
