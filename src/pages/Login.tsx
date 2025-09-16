@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BarChart3, Eye, EyeOff } from 'lucide-react';
@@ -12,6 +13,8 @@ const Login = () => {
   const [formData, setFormData] = useState({ email: '', senha: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,6 +43,22 @@ setTimeout(() => {
       showError(error instanceof Error ? error.message : 'Erro ao fazer login');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = resetEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return showError('Informe um e-mail válido.');
+    }
+    try {
+      await authService.requestPasswordReset(email);
+      showSuccess('Se existir uma conta com esse e-mail, enviaremos um link para redefinir a senha.');
+      setResetOpen(false);
+      setResetEmail('');
+    } catch (err: any) {
+      showError(err?.message || 'Não foi possível enviar o e-mail de recuperação.');
     }
   };
 
@@ -108,7 +127,39 @@ setTimeout(() => {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 text-center space-y-2">
+              <div>
+                <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+                  <DialogTrigger asChild>
+                    <button className="text-sm text-blue-600 hover:text-blue-700 font-semibold">
+                      Esqueci minha senha
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Recuperar senha</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleRequestReset} className="space-y-4">
+                      <div>
+                        <Label htmlFor="resetEmail">E-mail</Label>
+                        <Input
+                          id="resetEmail"
+                          type="email"
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          placeholder="seu@email.com"
+                          className="bg-white text-gray-900"
+                          required
+                        />
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button type="button" variant="outline" onClick={() => setResetOpen(false)}>Cancelar</Button>
+                        <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">Enviar link</Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
               <p className="text-sm text-gray-600">
                 Não tem uma conta?{' '}
                 <button

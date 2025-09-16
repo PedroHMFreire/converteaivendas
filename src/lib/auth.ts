@@ -63,6 +63,16 @@ async function logout() {
 }
 
 /* -----------------------------------------------------------
+   Recuperação de senha (envio de e-mail)
+----------------------------------------------------------- */
+async function requestPasswordReset(email: string) {
+  const redirectTo = `${window.location.origin}/reset-password`;
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw error;
+  return data;
+}
+
+/* -----------------------------------------------------------
    Sessão (usado pelo AuthGuard)
 ----------------------------------------------------------- */
 async function getSession() {
@@ -308,6 +318,7 @@ export const authService = {
   refreshSession,
   refreshUserData,
   clearCache,
+  requestPasswordReset,
 };
 
 export default authService;

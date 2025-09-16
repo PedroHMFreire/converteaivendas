@@ -9,6 +9,7 @@ import { ThemeProvider } from "next-themes";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ResetPassword from "./pages/ResetPassword";
 import Cadastros from "./pages/Cadastros";
 import Upgrade from "./pages/Upgrade";
 import NotFound from "./pages/NotFound";
@@ -45,7 +46,7 @@ function AppRoutes() {
   const location = useLocation();
 
   // Páginas públicas SEM header (inclui "/" que agora é Landing)
-  const hideHeaderRoutes = ["/", "/login", "/register", "/landing", "/billing/success"];
+  const hideHeaderRoutes = ["/", "/login", "/register", "/landing", "/billing/success", "/reset-password"];
   const hideHeader = hideHeaderRoutes.includes(location.pathname);
 
   return hideHeader ? (
@@ -58,6 +59,7 @@ function AppRoutes() {
       {/* Acesso/conta */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+  <Route path="/reset-password" element={<ResetPassword />} />
 
       {/* Sucesso do Mercado Pago (pública) */}
       <Route path="/billing/success" element={<BillingSuccess />} />
