@@ -290,7 +290,7 @@ export default function InsightsIA() {
       </div>
 
       <footer className="mt-10 text-xs text-gray-500">
-        Insights são gerados automaticamente a cada 2 horas com base nos seus últimos 7–14 dias.
+        Insights são gerados automaticamente todos os dias às 8h (horário de Brasília), com base nos seus últimos 7–14 dias.
       </footer>
     </div>
   );

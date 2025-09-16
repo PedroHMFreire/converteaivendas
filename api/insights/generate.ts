@@ -4,12 +4,16 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
-function truncTo2h(date = new Date()) {
-  const d = new Date(date)
-  d.setUTCMinutes(0, 0, 0)
-  const h = d.getUTCHours()
-  d.setUTCHours(h - (h % 2))
-  return d
+// Daily slot at 08:00 America/Sao_Paulo (currently UTC-3 → 11:00Z)
+// Note: Brazil currently has no DST. If DST returns, consider computing the offset dynamically.
+function daily8amSlot(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  const ymd = fmt.format(date) // e.g., 2025-09-16 (local SP date)
+  // Store as 11:00Z (08:00 BRT). This serves as our idempotent slot for the local day.
+  return new Date(`${ymd}T11:00:00Z`)
 }
 
 function dateOnly(d: string | Date) {
@@ -30,7 +34,7 @@ export default async function handler(req: Request) {
   }
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-  const slot = truncTo2h()
+  const slot = daily8amSlot()
 
   try {
     // Get active users: who have cadastros row
@@ -42,7 +46,7 @@ export default async function handler(req: Request) {
     const uniqUsers = Array.from(new Set((users || []).map(u => u.user_id))).filter(Boolean)
 
     for (const uid of uniqUsers) {
-      // Check idempotency
+  // Check idempotency (once per day per user)
       const { data: existing, error: existErr } = await supabase
         .from('insights_feed')
         .select('id')
