@@ -22,8 +22,9 @@ export default async function handler(req: any, res: any) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    const { PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_ENV } = process.env;
-    if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) {
+  const { PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_CLIENT_SECRET, PAYPAL_ENV } = process.env;
+  const SECRET = PAYPAL_SECRET || PAYPAL_CLIENT_SECRET; // accept both names
+  if (!PAYPAL_CLIENT_ID || !SECRET) {
       return res.status(500).json({ error: "PAYPAL_CLIENT_ID/SECRET ausentes" });
     }
     const baseURL =
@@ -33,14 +34,22 @@ export default async function handler(req: any, res: any) {
     if (!orderID) return res.status(400).json({ error: "orderID obrigatório" });
 
     // OAuth
-    const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString("base64");
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${SECRET}`).toString("base64");
     const tokenResp = await fetch(`${baseURL}/v1/oauth2/token`, {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
       body: "grant_type=client_credentials",
     });
     const tokenJson = await tokenResp.json();
-    if (!tokenResp.ok) return res.status(400).json({ error: "paypal_oauth_error", details: tokenJson });
+    if (!tokenResp.ok) {
+      return res.status(400).json({
+        error: "paypal_oauth_error",
+        status: tokenResp.status,
+        details: tokenJson,
+        hint:
+          "Verifique PAYPAL_ENV=live, PAYPAL_CLIENT_ID, PAYPAL_SECRET/PAYPAL_CLIENT_SECRET e se a credencial é do app live.",
+      });
+    }
     const accessToken = tokenJson.access_token as string;
 
     // Capturar
