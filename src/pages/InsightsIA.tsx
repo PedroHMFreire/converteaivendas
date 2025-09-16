@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import {
-  Lightbulb, RefreshCw, TrendingDown, TrendingUp, AlertTriangle, Target,
+  Lightbulb, TrendingDown, TrendingUp, AlertTriangle, Target,
   CalendarClock, DollarSign, Users, Store
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
@@ -33,6 +33,17 @@ type Insight = {
   action?: string;
 };
 
+type FeedItem = {
+  id: string;
+  created_at: string;
+  title: string;
+  description: string;
+  tag: "alert" | "opportunity" | "info";
+  icon?: keyof typeof icons;
+  metric?: string;
+  action?: string;
+};
+
 const icons = {
   trendingUp: <TrendingUp className="w-5 h-5" />,
   trendingDown: <TrendingDown className="w-5 h-5" />,
@@ -48,7 +59,15 @@ const brl = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 const dateOnly = (d: string) =>
-  /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date(new Date(d)).toISOString().split("T")[0];
+  /^\d{4}-\d{2}-\d{2}$/.test(d)
+    ? d
+    : (() => {
+        const n = new Date(d);
+        const y = n.getFullYear();
+        const m = String(n.getMonth() + 1).padStart(2, "0");
+        const day = String(n.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      })();
 
 const addDays = (d: Date, days: number) => {
   const n = new Date(d);
@@ -67,9 +86,13 @@ export default function InsightsIA() {
   const [lojas, setLojas] = useState<Loja[]>([]);
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [insights, setInsights] = useState<Insight[]>([]);
-  const [today, setToday] = useState<string>(dateOnly(new Date().toISOString()));
-  const [regenLoading, setRegenLoading] = useState(false);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [fallbackInsights, setFallbackInsights] = useState<Insight[]>([]);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -84,7 +107,7 @@ export default function InsightsIA() {
         const uid = auth.user.id;
         setUserId(uid);
 
-        // 1) Cadastros (lojas com ticketMedio + vendedores)
+        // Carrega cadastros para fallback
         const { data: cad, error: cadErr } = await supabase
           .from("cadastros")
           .select("lojas, vendedores")
@@ -92,150 +115,182 @@ export default function InsightsIA() {
           .limit(1)
           .single();
         if (cadErr) throw cadErr;
-
         const lojasDb = ((cad?.lojas ?? []) as Loja[]) || [];
         const vendedoresDb = ((cad?.vendedores ?? []) as Vendedor[]) || [];
         setLojas(lojasDb);
         setVendedores(vendedoresDb);
 
-        // 2) Registros dos últimos 60 dias, projetando apenas colunas necessárias
+        // Carrega registros (60d) para fallback
         const sinceStr = dateOnly(addDays(new Date(), -60).toISOString());
+        const todayStr = dateOnly(new Date().toISOString());
         const { data: regs, error: regsErr } = await supabase
           .from("registros")
           .select("id, vendedorId, lojaId, data, user_id, vendas, atendimentos")
           .eq("user_id", uid)
           .gte("data", sinceStr)
-          .lte("data", today);
+          .lte("data", todayStr);
         if (regsErr) throw regsErr;
-
         const vendasData = (regs || []).map((r: any) => ({ ...r, data: dateOnly(r.data) })) as Venda[];
         setVendas(vendasData);
 
-        // 3) Tenta carregar insights do dia (cache)
-        const { data: insRow, error: insErr } = await supabase
-          .from("insights")
-          .select("items")
-          .eq("user_id", uid)
-          .eq("date", today)
-          .limit(1)
-          .single();
-        if (insErr && insErr.code !== 'PGRST116') throw insErr; // ignora not found
+        // Primeira página do feed
+        await loadPage(uid, 0);
 
-        if (insRow?.items) {
-          setInsights(insRow.items as Insight[]);
-        } else {
-          // computa e salva
-          const fresh = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
-          setInsights(fresh);
-          await supabase
-            .from("insights")
-            .upsert(
-              [{ user_id: uid, date: today, items: fresh, updated_at: new Date().toISOString() }],
-              { onConflict: "user_id,date" }
-            );
+        // Se não houver feed, gera fallback básico (não persiste)
+        if (feed.length === 0) {
+          const basic = generateDailyInsights(vendasData, lojasDb, vendedoresDb);
+          setFallbackInsights(basic);
         }
       } catch (e: any) {
-        console.error("InsightsIA: erro ao carregar dados", e);
+        console.error("InsightsIA: erro ao carregar feed", e);
         toast({ title: "Erro ao carregar insights", description: e?.message || String(e), variant: "destructive" });
       } finally {
         setLoading(false);
       }
     })();
-  }, [today]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const regenerate = async () => {
-    if (!userId || regenLoading) return;
-    setRegenLoading(true);
+  const loadPage = async (uid: string, p: number) => {
+    if (isLoadingPage || !hasMore) return;
+    setIsLoadingPage(true);
     try {
-      const fresh = generateDailyInsights(vendas, lojas, vendedores);
-      setInsights(fresh);
-      const { error } = await supabase
-        .from("insights")
-        .upsert([{ user_id: userId, date: today, items: fresh, updated_at: new Date().toISOString() }], { onConflict: "user_id,date" });
+      const from = p * pageSize;
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from("insights_feed")
+        .select("id, created_at, title, description, tag, icon, metric, action")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .range(from, to);
       if (error) throw error;
-      toast({ title: "Insights do dia atualizados!" });
+      const newItems = (data || []) as FeedItem[];
+      setFeed(prev => [...prev, ...newItems]);
+      setPage(p);
+      if (newItems.length < pageSize) setHasMore(false);
     } catch (e: any) {
-      console.error("InsightsIA: erro ao regerar", e);
-      toast({ title: "Erro ao regerar insights", description: e?.message || String(e), variant: "destructive" });
+      console.error("InsightsIA: erro ao paginar feed", e);
     } finally {
-      setRegenLoading(false);
+      setIsLoadingPage(false);
     }
   };
+
+  // Infinite scroll sentinel
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !userId) return;
+    const obs = new IntersectionObserver((entries) => {
+      const [entry] = entries;
+      if (entry.isIntersecting && hasMore && !isLoadingPage) {
+        loadPage(userId, page + 1);
+      }
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [userId, page, hasMore, isLoadingPage]);
+
+  // sem botão de regerar no novo fluxo (feed gerado pelo backend a cada 2h)
 
   return (
     <div className="w-full max-w-5xl mx-auto px-3 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Lightbulb className="w-6 h-6 text-amber-500" /> Insights da IA
+          <Lightbulb className="w-6 h-6 text-amber-500" /> Feed de Insights da IA
         </h1>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            className="border rounded p-2 text-sm dark:bg-zinc-900 dark:text-white"
-            value={today}
-            onChange={(e) => setToday(e.target.value)}
-          />
-          <Button variant="outline" onClick={regenerate} title="Regerar os 5 insights do dia" disabled={regenLoading}>
-            <RefreshCw className="w-4 h-4 mr-2" /> {regenLoading ? 'Regerando...' : 'Regerar'}
-          </Button>
-        </div>
       </div>
 
-      {loading ? (
-        <div className="text-sm text-gray-500">Carregando dados e gerando insights...</div>
-      ) : insights.length === 0 ? (
-        <div className="text-sm text-gray-500">Sem dados suficientes para gerar insights. Cadastre registros e defina ticket médio nas Lojas.</div>
-      ) : (
-        <ul className="grid grid-cols-1 gap-3">
-          {insights.map((it) => (
-            <li
-              key={it.id}
-              className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center justify-center rounded-full w-8 h-8 ${
+      {loading && (
+        <div className="text-sm text-gray-500">Carregando feed…</div>
+      )}
+
+      {!loading && feed.length === 0 && fallbackInsights.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-gray-600 mb-2">Sugestões do dia</h2>
+          <ul className="grid grid-cols-1 gap-3">
+            {fallbackInsights.map((it) => (
+              <li key={it.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center rounded-full w-8 h-8 ${
+                      it.tag === "alert"
+                        ? "bg-rose-100 text-rose-700"
+                        : it.tag === "opportunity"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-sky-100 text-sky-700"
+                    }`}>
+                      {icons[it.icon]}
+                    </span>
+                    <h3 className="font-semibold">{it.title}</h3>
+                  </div>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${
                     it.tag === "alert"
                       ? "bg-rose-100 text-rose-700"
                       : it.tag === "opportunity"
                       ? "bg-emerald-100 text-emerald-700"
                       : "bg-sky-100 text-sky-700"
-                  }`}>
-                    {icons[it.icon]}
-                  </span>
-                  <h3 className="font-semibold">{it.title}</h3>
+                  }`}>{it.tag === "alert" ? "Alerta" : it.tag === "opportunity" ? "Oportunidade" : "Insight"}</span>
                 </div>
-                <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{it.description}</p>
+                {it.metric && <p className="mt-2 text-xs text-gray-500">Métrica: {it.metric}</p>}
+                {it.action && (
+                  <div className="mt-3">
+                    <Button size="sm" variant="outline" onClick={() => { if ((it.id === 'tickets') || (it.action || '').toLowerCase().includes('cadastros')) navigate('/cadastros'); }}>
+                      {it.action}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <ul className="grid grid-cols-1 gap-3">
+        {feed.map((it) => (
+          <li key={it.id} className="rounded-xl border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center justify-center rounded-full w-8 h-8 ${
                   it.tag === "alert"
                     ? "bg-rose-100 text-rose-700"
                     : it.tag === "opportunity"
                     ? "bg-emerald-100 text-emerald-700"
                     : "bg-sky-100 text-sky-700"
-                }`}>{it.tag === "alert" ? "Alerta" : it.tag === "opportunity" ? "Oportunidade" : "Insight"}</span>
-              </div>
-              <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{it.description}</p>
-              {it.metric && <p className="mt-2 text-xs text-gray-500">Métrica: {it.metric}</p>}
-              {it.action && (
-                <div className="mt-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (it.id === 'tickets' || (it.action || '').toLowerCase().includes('cadastros')) {
-                        navigate('/cadastros');
-                      }
-                    }}
-                  >
-                    {it.action}
-                  </Button>
+                }`}>
+                  {it.icon && icons[it.icon]}
+                </span>
+                <div>
+                  <h3 className="font-semibold">{it.title}</h3>
+                  <p className="text-[11px] text-gray-500">{new Date(it.created_at).toLocaleString()}</p>
                 </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+              </div>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                it.tag === "alert"
+                  ? "bg-rose-100 text-rose-700"
+                  : it.tag === "opportunity"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-sky-100 text-sky-700"
+              }`}>{it.tag === "alert" ? "Alerta" : it.tag === "opportunity" ? "Oportunidade" : "Insight"}</span>
+            </div>
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">{it.description}</p>
+            {it.metric && <p className="mt-2 text-xs text-gray-500">Métrica: {it.metric}</p>}
+            {it.action && (
+              <div className="mt-3">
+                <Button size="sm" variant="outline" onClick={() => { if ((it.action || '').toLowerCase().includes('cadastros')) navigate('/cadastros'); }}>
+                  {it.action}
+                </Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div ref={sentinelRef} className="h-10 flex items-center justify-center text-xs text-gray-500">
+        {isLoadingPage ? "Carregando mais…" : hasMore ? "" : "Fim do histórico"}
+      </div>
+
       <footer className="mt-10 text-xs text-gray-500">
-        Os insights usam os seus dados dos últimos 7 dias e o <strong>ticket médio</strong> cadastrado por loja.
+        Insights são gerados automaticamente a cada 2 horas com base nos seus últimos 7–14 dias.
       </footer>
     </div>
   );
